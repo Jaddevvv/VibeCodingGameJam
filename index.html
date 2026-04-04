@@ -63,18 +63,35 @@
         cursor: grabbing;
       }
 
-      .hud {
+      .status-strip {
         position: absolute;
         left: 20px;
         top: 20px;
         z-index: 2;
-        width: min(360px, calc(100vw - 40px));
-        border: 1px solid rgba(255, 255, 255, 0.45);
-        border-radius: 24px;
-        background: rgba(248, 253, 245, 0.74);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        border: 1px solid rgba(255, 255, 255, 0.48);
+        border-radius: 999px;
+        background: rgba(248, 253, 245, 0.78);
         backdrop-filter: blur(14px);
-        box-shadow: 0 20px 50px rgba(62, 96, 54, 0.14);
-        padding: 18px 18px 16px;
+        box-shadow: 0 14px 36px rgba(62, 96, 54, 0.12);
+        color: #17311e;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        padding: 0 16px;
+      }
+
+      .status-pill--wide {
+        min-width: 196px;
       }
 
       .eyebrow {
@@ -92,14 +109,6 @@
         font-size: clamp(2rem, 3.8vw, 3.5rem);
         line-height: 0.95;
         letter-spacing: -0.05em;
-      }
-
-      .hud p {
-        margin: 12px 0 0;
-        max-width: 30ch;
-        font-size: 0.98rem;
-        line-height: 1.5;
-        color: rgba(17, 32, 24, 0.78);
       }
 
       .corner-actions {
@@ -217,10 +226,10 @@
       }
 
       @media (max-width: 720px) {
-        .hud {
-          width: calc(100vw - 32px);
+        .status-strip {
           left: 16px;
           top: 16px;
+          gap: 8px;
         }
 
         .corner-actions {
@@ -240,11 +249,11 @@
     <div id="app">
       <div id="sceneRoot"></div>
 
-      <section class="hud">
-        <p class="eyebrow">Grass Run</p>
-        <h1>Upload a face. Run the field.</h1>
-        <p id="hintText">Move the mouse to look around, then use WASD, ZQSD, or arrow keys to run through the grass.</p>
-      </section>
+      <div class="status-strip">
+        <span class="status-pill" id="levelValue">Lv 1</span>
+        <span class="status-pill" id="coinCountValue">Coins 0/0</span>
+        <span class="status-pill status-pill--wide" id="goalValue">Collect all coins</span>
+      </div>
 
       <div class="corner-actions">
         <button class="ghost-button" id="changePhotoButton" type="button">Change photo</button>
