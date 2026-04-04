@@ -8,9 +8,9 @@
     />
     <meta
       name="description"
-      content="Upload a face, place it on a runner, and move through a grassy Three.js field."
+      content="Upload a face, pick a blade, and hold the road against zombie waves in a Three.js survival runner."
     />
-    <title>Grass Runner</title>
+    <title>Deadlane Squad</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -19,12 +19,13 @@
     />
     <style>
       :root {
-        color-scheme: light;
+        color-scheme: dark;
         font-family: "Manrope", sans-serif;
         background:
-          radial-gradient(circle at top, rgba(255, 246, 215, 0.9), transparent 34%),
-          linear-gradient(180deg, #cfe7ff 0%, #dff2ff 42%, #edf7f2 100%);
-        color: #112018;
+          radial-gradient(circle at top, rgba(255, 149, 85, 0.24), transparent 30%),
+          radial-gradient(circle at bottom, rgba(24, 110, 121, 0.3), transparent 36%),
+          linear-gradient(180deg, #0f1c29 0%, #172534 42%, #10161f 100%);
+        color: #edf3f8;
       }
 
       * {
@@ -56,11 +57,7 @@
       #sceneRoot {
         position: absolute;
         inset: 0;
-        cursor: grab;
-      }
-
-      #sceneRoot:active {
-        cursor: grabbing;
+        cursor: default;
       }
 
       .status-strip {
@@ -77,12 +74,12 @@
         display: inline-flex;
         align-items: center;
         min-height: 44px;
-        border: 1px solid rgba(255, 255, 255, 0.48);
+        border: 1px solid rgba(255, 255, 255, 0.16);
         border-radius: 999px;
-        background: rgba(248, 253, 245, 0.78);
+        background: rgba(10, 17, 24, 0.62);
         backdrop-filter: blur(14px);
-        box-shadow: 0 14px 36px rgba(62, 96, 54, 0.12);
-        color: #17311e;
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+        color: #f6fbff;
         font-family: "Space Grotesk", sans-serif;
         font-size: 0.82rem;
         font-weight: 700;
@@ -101,7 +98,7 @@
         font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
-        color: #2f6f2f;
+        color: #ffb57b;
       }
 
       h1 {
@@ -120,13 +117,26 @@
         gap: 10px;
       }
 
+      .weapon-dock {
+        position: absolute;
+        left: 50%;
+        bottom: 24px;
+        z-index: 2;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        transform: translateX(-50%);
+      }
+
       .ghost-button,
-      .upload-button {
+      .upload-button,
+      .weapon-button {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         min-height: 50px;
-        border: 0;
+        border: 1px solid transparent;
         border-radius: 999px;
         padding: 0 18px;
         text-decoration: none;
@@ -138,19 +148,33 @@
       }
 
       .ghost-button {
-        background: rgba(248, 253, 245, 0.82);
-        color: #14311a;
-        box-shadow: 0 14px 36px rgba(62, 96, 54, 0.12);
+        background: rgba(13, 21, 30, 0.72);
+        color: #edf6ff;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.26);
       }
 
       .upload-button {
-        background: linear-gradient(135deg, #2f8c35 0%, #89c44b 100%);
-        color: #f7fff5;
-        box-shadow: 0 18px 36px rgba(47, 140, 53, 0.28);
+        background: linear-gradient(135deg, #bc4e2d 0%, #ff8a42 100%);
+        color: #fff8f4;
+        box-shadow: 0 18px 36px rgba(188, 78, 45, 0.3);
+      }
+
+      .weapon-button {
+        background: rgba(12, 18, 25, 0.74);
+        border-color: rgba(255, 255, 255, 0.12);
+        color: rgba(241, 248, 255, 0.84);
+        box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
+      }
+
+      .weapon-button[data-active="true"] {
+        background: linear-gradient(135deg, rgba(255, 114, 55, 0.96), rgba(255, 189, 94, 0.94));
+        border-color: rgba(255, 240, 224, 0.6);
+        color: #1d0d05;
       }
 
       .ghost-button:hover,
-      .upload-button:hover {
+      .upload-button:hover,
+      .weapon-button:hover {
         transform: translateY(-1px);
       }
 
@@ -162,11 +186,23 @@
         align-items: center;
         justify-content: center;
         padding: 20px;
-        background: rgba(14, 32, 17, 0.22);
+        background: rgba(7, 12, 17, 0.5);
         backdrop-filter: blur(10px);
         opacity: 0;
         pointer-events: none;
         transition: opacity 220ms ease;
+      }
+
+      #damageOverlay {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        opacity: 0;
+        background:
+          radial-gradient(circle at center, rgba(0, 0, 0, 0) 42%, rgba(136, 11, 17, 0.14) 62%, rgba(136, 11, 17, 0.5) 100%),
+          linear-gradient(180deg, rgba(163, 24, 35, 0.18), rgba(44, 0, 0, 0.02) 34%, rgba(92, 0, 0, 0.22));
+        transition: opacity 90ms linear;
       }
 
       .modal[data-open="true"] {
@@ -178,9 +214,10 @@
         width: min(500px, 100%);
         border-radius: 28px;
         background:
-          radial-gradient(circle at top left, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.74)),
-          linear-gradient(180deg, #f4ffe8 0%, #f4fbef 100%);
-        box-shadow: 0 30px 90px rgba(29, 58, 28, 0.2);
+          radial-gradient(circle at top left, rgba(255, 227, 206, 0.2), rgba(255, 255, 255, 0.04)),
+          linear-gradient(180deg, #101925 0%, #11141c 100%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.4);
         padding: 28px;
       }
 
@@ -194,7 +231,7 @@
       .modal-card p {
         margin: 14px 0 0;
         line-height: 1.6;
-        color: rgba(17, 32, 24, 0.78);
+        color: rgba(232, 239, 247, 0.74);
       }
 
       .modal-actions {
@@ -210,8 +247,8 @@
         min-height: 42px;
         border-radius: 999px;
         padding: 0 14px;
-        background: rgba(23, 58, 29, 0.08);
-        color: rgba(17, 32, 24, 0.68);
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(242, 247, 252, 0.72);
         font-family: "Space Grotesk", sans-serif;
         font-size: 0.82rem;
         letter-spacing: 0.03em;
@@ -238,6 +275,19 @@
           bottom: 16px;
         }
 
+        .weapon-dock {
+          left: 16px;
+          right: 16px;
+          bottom: 82px;
+          justify-content: stretch;
+          transform: none;
+        }
+
+        .weapon-button {
+          flex: 1 1 calc(33.33% - 8px);
+          min-width: 0;
+        }
+
         .ghost-button {
           min-height: 48px;
         }
@@ -250,22 +300,32 @@
       <div id="sceneRoot"></div>
 
       <div class="status-strip">
-        <span class="status-pill" id="levelValue">Lv 1</span>
-        <span class="status-pill" id="coinCountValue">Coins 0/0</span>
-        <span class="status-pill status-pill--wide" id="goalValue">Collect all coins</span>
+        <span class="status-pill" id="levelValue">Zone 1</span>
+        <span class="status-pill" id="coinCountValue">Hearts 2/2 | Gate 0/0</span>
+        <span class="status-pill status-pill--wide" id="goalValue">Hold the lane</span>
+        <span class="status-pill status-pill--wide" id="weaponValue">Katana | Fast arc</span>
       </div>
 
       <div class="corner-actions">
         <button class="ghost-button" id="changePhotoButton" type="button">Change photo</button>
       </div>
 
+      <div class="weapon-dock">
+        <button class="weapon-button" data-weapon="katana" type="button">1 Katana</button>
+        <button class="weapon-button" data-weapon="axe" type="button">2 Axe</button>
+        <button class="weapon-button" data-weapon="glaive" type="button">3 Glaive</button>
+      </div>
+
+      <div id="damageOverlay"></div>
+
       <div class="modal" data-open="true" id="uploadModal">
         <div class="modal-card">
-          <p class="eyebrow">Avatar Setup</p>
-          <h2>Pick a face image and drop it straight onto the runner.</h2>
+          <p class="eyebrow">Squad Setup</p>
+          <h2>Load your face, pick a blade, and carve through the deadlane.</h2>
           <p>
-            The UI is intentionally reduced for now. Upload one image, then run
-            around a grassy Three.js field.
+            You are defending the squad convoy now, not chasing coins. Attack
+            with click or F, jump with Space, switch weapons with 1-2-3, and
+            hold the lane while the gate charges.
           </p>
           <div class="modal-actions">
             <label class="upload-button" for="photoInput">Upload image</label>
