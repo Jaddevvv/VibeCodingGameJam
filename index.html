@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <meta
+      name="description"
+      content="Upload a face, place it on a runner, and move through a grassy Three.js field."
+    />
+    <title>Grass Runner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Manrope", sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(255, 246, 215, 0.9), transparent 34%),
+          linear-gradient(180deg, #cfe7ff 0%, #dff2ff 42%, #edf7f2 100%);
+        color: #112018;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        overflow: hidden;
+      }
+
+      button,
+      input,
+      label {
+        font: inherit;
+      }
+
+      #app {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      #sceneRoot {
+        position: absolute;
+        inset: 0;
+        cursor: grab;
+      }
+
+      #sceneRoot:active {
+        cursor: grabbing;
+      }
+
+      .hud {
+        position: absolute;
+        left: 20px;
+        top: 20px;
+        z-index: 2;
+        width: min(360px, calc(100vw - 40px));
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        border-radius: 24px;
+        background: rgba(248, 253, 245, 0.74);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 20px 50px rgba(62, 96, 54, 0.14);
+        padding: 18px 18px 16px;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #2f6f2f;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 3.8vw, 3.5rem);
+        line-height: 0.95;
+        letter-spacing: -0.05em;
+      }
+
+      .hud p {
+        margin: 12px 0 0;
+        max-width: 30ch;
+        font-size: 0.98rem;
+        line-height: 1.5;
+        color: rgba(17, 32, 24, 0.78);
+      }
+
+      .corner-actions {
+        position: absolute;
+        right: 20px;
+        top: 20px;
+        z-index: 2;
+        display: flex;
+        gap: 10px;
+      }
+
+      .ghost-button,
+      .upload-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 50px;
+        border: 0;
+        border-radius: 999px;
+        padding: 0 18px;
+        text-decoration: none;
+        cursor: pointer;
+        transition:
+          transform 180ms ease,
+          box-shadow 180ms ease,
+          background-color 180ms ease;
+      }
+
+      .ghost-button {
+        background: rgba(248, 253, 245, 0.82);
+        color: #14311a;
+        box-shadow: 0 14px 36px rgba(62, 96, 54, 0.12);
+      }
+
+      .upload-button {
+        background: linear-gradient(135deg, #2f8c35 0%, #89c44b 100%);
+        color: #f7fff5;
+        box-shadow: 0 18px 36px rgba(47, 140, 53, 0.28);
+      }
+
+      .ghost-button:hover,
+      .upload-button:hover {
+        transform: translateY(-1px);
+      }
+
+      .modal {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(14, 32, 17, 0.22);
+        backdrop-filter: blur(10px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 220ms ease;
+      }
+
+      .modal[data-open="true"] {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .modal-card {
+        width: min(500px, 100%);
+        border-radius: 28px;
+        background:
+          radial-gradient(circle at top left, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.74)),
+          linear-gradient(180deg, #f4ffe8 0%, #f4fbef 100%);
+        box-shadow: 0 30px 90px rgba(29, 58, 28, 0.2);
+        padding: 28px;
+      }
+
+      .modal-card h2 {
+        margin: 0;
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        line-height: 0.96;
+        letter-spacing: -0.05em;
+      }
+
+      .modal-card p {
+        margin: 14px 0 0;
+        line-height: 1.6;
+        color: rgba(17, 32, 24, 0.78);
+      }
+
+      .modal-actions {
+        margin-top: 24px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 42px;
+        border-radius: 999px;
+        padding: 0 14px;
+        background: rgba(23, 58, 29, 0.08);
+        color: rgba(17, 32, 24, 0.68);
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 0.82rem;
+        letter-spacing: 0.03em;
+      }
+
+      #photoInput {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      @media (max-width: 720px) {
+        .hud {
+          width: calc(100vw - 32px);
+          left: 16px;
+          top: 16px;
+        }
+
+        .corner-actions {
+          right: 16px;
+          top: auto;
+          bottom: 16px;
+        }
+
+        .ghost-button {
+          min-height: 48px;
+        }
+      }
+    </style>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div id="sceneRoot"></div>
+
+      <section class="hud">
+        <p class="eyebrow">Grass Run</p>
+        <h1>Upload a face. Run the field.</h1>
+        <p id="hintText">Move the mouse to look around, then use WASD, ZQSD, or arrow keys to run through the grass.</p>
+      </section>
+
+      <div class="corner-actions">
+        <button class="ghost-button" id="changePhotoButton" type="button">Change photo</button>
+      </div>
+
+      <div class="modal" data-open="true" id="uploadModal">
+        <div class="modal-card">
+          <p class="eyebrow">Avatar Setup</p>
+          <h2>Pick a face image and drop it straight onto the runner.</h2>
+          <p>
+            The UI is intentionally reduced for now. Upload one image, then run
+            around a grassy Three.js field.
+          </p>
+          <div class="modal-actions">
+            <label class="upload-button" for="photoInput">Upload image</label>
+            <span class="status-chip" id="uploadStatus">No image loaded yet.</span>
+          </div>
+          <input id="photoInput" type="file" accept="image/*" />
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
