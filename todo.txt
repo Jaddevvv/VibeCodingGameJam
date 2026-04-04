@@ -1,0 +1,498 @@
+Cozy 3D Browser Puzzle Game Concept
+
+Three.js — Solo & Multiplayer — Level-Based Complexity — Attractive Visual Identity
+
+Working Title
+
+Skyloom
+alternatives: Aether Steps, Luma Isles, Driftlight
+
+0. Jam Compliance Checklist
+
+- Ship as a public web game with no login or signup required.
+- Keep it free-to-play.
+- Avoid heavy downloads and loading screens; players should get into the game almost immediately.
+- Keep multiplayer optional, but make sure the solo experience is complete.
+- Submit only one entry for this person/project.
+
+1. Core Vision
+
+We want to create a 3D browser game built with Three.js that feels:
+
+visually attractive
+intuitive to understand
+satisfying in solo
+even better in multiplayer
+progressive level by level
+calm, polished, and memorable
+
+The game should combine the accessibility of a casual puzzle game with the charm of a stylish 3D world. It must be playable alone or with a group, without changing the core identity of the experience.
+
+The main design goal is simple:
+
+a beautiful cooperative puzzle adventure that remains fully playable solo, with increasing complexity and strong “good vibe” energy.
+
+2. High-Level Concept
+
+The player explores a series of floating 3D islands / dreamlike worlds.
+Each level is a self-contained puzzle space with:
+
+a clear objective
+one or more mechanics
+environmental interactions
+a visible end goal
+a controlled increase in difficulty
+
+In solo mode, one player completes the full level alone.
+In multiplayer mode, the same level can be completed with others, making coordination part of the fun.
+
+The design should never make multiplayer feel mandatory for the base game. Instead:
+
+solo should feel complete and elegant
+multiplayer should feel richer, more social, and sometimes easier or funnier
+3. Tone and Vibe
+
+The visual and emotional direction should be:
+
+cozy
+dreamy
+colorful but clean
+modern
+non-violent
+soft and immersive
+
+Think:
+
+floating islands in the sky
+warm lighting
+subtle glow effects
+moving clouds
+magical energy lines
+soft ambient music
+satisfying interaction sounds
+smooth character movement
+
+The vibe should feel premium and appealing from the first few seconds.
+It should be something players want to stay in, not just solve and leave.
+
+4. Target Experience
+
+The player should feel:
+
+curiosity when entering a level
+clarity when understanding the objective
+satisfaction when figuring out the puzzle
+calm progression rather than stress
+delight when playing with friends
+
+The game is not meant to be sweaty, hyper-competitive, or punishing.
+It should reward:
+
+observation
+logic
+timing
+experimentation
+coordination
+5. Core Gameplay Loop
+
+Each level follows this loop:
+
+Enter a visually distinct puzzle environment
+Understand the goal through layout and visual cues
+Interact with objects, platforms, switches, doors, and environmental systems
+Solve the puzzle by sequencing actions correctly
+Reach the level exit
+Unlock the next level with slightly more complexity
+
+This structure works very well for both solo and multiplayer.
+
+6. Solo and Multiplayer Philosophy
+Solo
+
+In solo mode, the player can complete every main level without requiring another real player.
+
+This can be done through mechanics such as:
+
+sequential actions
+movable objects
+temporary activation systems
+switch networks
+controllable companion entities
+slow timed interactions
+puzzle layouts designed for one player
+Multiplayer
+
+In multiplayer, the exact same level becomes more dynamic because tasks can be split between players.
+
+This creates natural collaboration such as:
+
+one player holding a switch while another crosses
+one player carrying an object while another opens the path
+synchronized timing
+puzzle discovery through discussion
+role distribution
+
+This makes the game ideal for team-building because it naturally creates:
+
+communication
+experimentation
+coordination
+shared success
+7. Core Mechanics
+
+The game should begin with a small set of highly readable mechanics and expand gradually.
+
+Foundational mechanics
+movement and jumping
+pushing / carrying objects
+pressure plates
+doors and gates
+moving platforms
+collectible energy orbs
+sockets / activation points
+timed switches
+Intermediate mechanics
+rotating bridges
+light beam redirection
+wind currents
+temporary platforms
+linked mechanisms
+multiple-step activation sequences
+mirrored puzzle elements
+Advanced mechanics
+synchronized triggers
+object chaining
+split-path problem solving
+vertical puzzle navigation
+delayed reactions
+environmental logic combinations
+optional co-op shortcuts
+
+The key is not to add too many mechanics too early.
+The game should feel clean and elegant, not overloaded.
+
+8. Level-by-Level Complexity Structure
+
+The progression should feel deliberate and attractive.
+
+World 1 — Introduction
+
+Goal: teach movement, interaction, and trust in the game’s logic.
+
+Levels introduce:
+
+movement
+one switch = one door
+pushing a simple object
+carrying an orb to a socket
+understanding the exit condition
+
+Player feeling:
+
+“I understand the game.”
+“This is beautiful and satisfying.”
+World 2 — Combination
+
+Goal: teach players to combine two mechanics in one level.
+
+Levels introduce:
+
+switch + moving platform
+orb + timed door
+object placement + traversal
+simple sequencing
+
+Player feeling:
+
+“Now I need to think one step ahead.”
+World 3 — Timing and Rhythm
+
+Goal: make execution and sequencing more important.
+
+Levels introduce:
+
+timed activation
+moving hazards
+short coordination windows
+precise platform timing
+multi-step chain reactions
+
+Player feeling:
+
+“I know the rules, but I need better planning.”
+World 4 — Spatial Thinking
+
+Goal: increase the importance of 3D space and verticality.
+
+Levels introduce:
+
+rotating level elements
+vertical routes
+split pathways
+hidden activation logic
+perspective-based understanding
+
+Player feeling:
+
+“This is more layered and intelligent.”
+World 5 — Cooperation and Mastery
+
+Goal: combine mechanics and allow strong solo/multiplayer expression.
+
+Levels introduce:
+
+multi-part puzzle chains
+alternative solution paths
+simultaneous actions
+optimization challenges
+optional advanced objectives
+
+Player feeling:
+
+“I’ve mastered the system.”
+“This is amazing with friends.”
+9. Example Level Progression
+Level 1 — Awakening
+
+A tiny floating island with one glowing switch and one gate.
+Press switch, open path, reach portal.
+
+Level 2 — First Transfer
+
+Pick up an orb and place it into a socket to activate a bridge.
+
+Level 3 — Weight and Motion
+
+Push a block onto a plate to keep a door open.
+
+Level 4 — Delayed Access
+
+Activate a timed switch and cross before the gate closes.
+
+Level 5 — Split Logic
+
+Use a block to keep one system active while manually triggering another.
+
+Level 6 — Rotating Path
+
+Turn a bridge section into alignment to reach a second platform.
+
+Level 7 — Twin Towers
+
+Navigate vertically through two connected structures with linked switches.
+
+Level 8 — Chain Reaction
+
+Activate several mechanisms in the correct order to unlock the portal.
+
+Level 9 — Harmonic Flow
+
+Carry energy across the level while managing timing and path changes.
+
+Level 10 — Skyloom Gate
+
+A larger “end of world” level combining all mechanics introduced so far.
+
+10. Multiplayer Use Cases
+
+This game can work in different social modes:
+
+1-player
+
+Classic puzzle experience, calm and immersive.
+
+2-player
+
+Best format for coordination and elegant co-op solving.
+
+3–4 players
+
+Very strong for team-building, with more communication and spontaneous role assignment.
+
+Potential room system:
+
+private room code
+quick join with friends
+host-controlled level selection
+11. Why It Works for Team-Building
+
+This concept is strong for colleagues because it encourages the right kind of interaction:
+
+people communicate naturally
+no advanced gaming skill is required
+success comes from shared thinking
+failure feels funny or interesting, not punishing
+short levels create momentum
+attractive visuals make the experience more memorable
+
+It avoids the problems of many team games:
+
+too much chaos
+too much pressure
+too much competitiveness
+too much time commitment
+
+This makes it usable for:
+
+internal team sessions
+casual social play
+event activations
+branded experience adaptations
+12. Visual Direction
+
+The art direction should be simple enough for browser performance, but attractive enough to feel polished.
+
+Recommended style
+stylized 3D
+soft rounded shapes
+medium-low geometry complexity
+strong color palettes
+subtle emissive glow
+atmospheric fog
+animated skyboxes
+clean silhouettes
+premium UI transitions
+Ideal environments
+floating islands in the sky
+magical ruins
+soft sci-fi platforms
+wind temples
+crystalline bridges
+glowing gardens
+Color approach
+
+Each world should have its own identity:
+
+World 1: warm sky blues and gold
+World 2: teal and soft white
+World 3: sunset orange and violet
+World 4: moonlit indigo and cyan
+World 5: luminous multicolor dream palette
+13. Camera and Feel
+
+Camera feel matters a lot in a 3D browser game.
+
+Recommended:
+
+third-person view
+smooth camera follow
+slight cinematic easing
+clean rotation controls
+readable puzzle framing
+automatic camera correction in key areas
+
+Movement should feel:
+
+soft
+responsive
+friendly
+slightly weighty but not slow
+
+The player character should be charming and visually readable from far away.
+
+14. Character Direction
+
+The player avatar should be simple and iconic.
+
+Good options:
+
+tiny glowing explorer
+soft robot
+floating spirit
+miniature sky traveler
+abstract creature with scarf/cape/light trail
+
+It should be expressive through:
+
+bounce
+particles
+movement feedback
+simple emotes
+color personalization in multiplayer
+15. Technical Direction
+Engine / stack
+Three.js for rendering
+browser-first architecture
+desktop and mobile-browser aware where possible
+lightweight backend for sessions / rooms
+real-time multiplayer via WebSockets
+Key priorities
+fast load time
+stable frame rate
+low friction onboarding
+easy room sharing
+modular level system
+scalable puzzle scripting
+Suggested structure
+reusable level components
+interaction system for switches, doors, sockets, and triggers
+state-driven puzzle manager
+separate solo and multiplayer test flows
+save / unlock progression system
+16. Monetization / Positioning Potential
+
+Depending on the business strategy, this project could be positioned as:
+
+A consumer browser game
+free entry
+premium cosmetics
+world pack expansions
+A branded team-building product
+custom skins / worlds for companies
+event-based deployment
+internal collaboration sessions
+A cross-platform casual title
+browser first
+later adapted to desktop stores or mobile
+
+The concept is flexible enough to support both entertainment and experiential use cases.
+
+17. Why Three.js Is a Good Fit
+
+Three.js is a strong match because the game relies on:
+
+visually attractive 3D environments
+stylized rendering rather than photorealism
+accessible browser play
+custom puzzle scenes
+scalable world building
+shareable web access
+
+This makes it easier to distribute, demo, and test than a heavier native-only setup.
+
+18. Key Design Principles
+
+The game should always follow these principles:
+
+Beautiful first impression
+Players should immediately feel the charm of the world.
+Easy to start
+No complicated tutorial wall.
+Depth through combination
+Complexity should come from mixing simple mechanics.
+Solo-first viability
+The base experience must be complete alone.
+Multiplayer enhancement
+Playing with others should enrich the experience.
+Short, satisfying levels
+Good pacing keeps players engaged.
+Readable 3D spaces
+Beauty should never hurt clarity.
+Calm and premium vibe
+The emotional identity is part of the product value.
+19. Pitch Summary
+
+Skyloom is a visually attractive 3D browser puzzle game built with Three.js, designed to be fully playable solo and even more engaging in multiplayer. Players explore dreamy floating environments and solve handcrafted levels that increase in complexity through elegant combinations of movement, switches, objects, timing, and environmental logic. The experience is calm, polished, social, and highly suitable for both entertainment and team-building.
+
+20. Final Recommendation
+
+This concept is worth pursuing because it sits at a strong intersection of:
+
+attractive web-native 3D
+solo accessibility
+multiplayer collaboration
+progressive level design
+premium visual identity
+team-building relevance
+
+If the goal is to create something
