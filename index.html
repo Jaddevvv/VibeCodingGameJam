@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank Assault - Desert Storm</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        canvas { display: block; }
+
+        #hud {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
+        }
+
+        /* Crosshair */
+        #crosshair {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 30px; height: 30px;
+        }
+        #crosshair::before, #crosshair::after {
+            content: ''; position: absolute; background: rgba(255,60,60,0.85);
+        }
+        #crosshair::before { width: 2px; height: 24px; left: 14px; top: 3px; }
+        #crosshair::after  { width: 24px; height: 2px; left: 3px;  top: 14px; }
+        #crosshair-dot {
+            position: absolute; width: 4px; height: 4px; background: rgba(255,60,60,0.9);
+            border-radius: 50%; top: 13px; left: 13px;
+        }
+
+        /* Charge bar */
+        #charge-container {
+            position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+            width: 220px; height: 14px;
+            background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 7px; overflow: hidden;
+        }
+        #charge-bar {
+            width: 0%; height: 100%;
+            background: linear-gradient(90deg, #00ff88, #ffcc00, #ff3333);
+            border-radius: 7px; transition: width 0.05s linear;
+        }
+        #charge-label {
+            position: absolute; bottom: 98px; left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.6); font-size: 11px; letter-spacing: 2px;
+        }
+
+        /* Health */
+        #health-container { position: absolute; bottom: 30px; left: 20px; width: 260px; }
+        #health-bar-bg {
+            width: 100%; height: 18px;
+            background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 9px; overflow: hidden;
+        }
+        #health-bar {
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, #00cc44, #44ff66);
+            border-radius: 9px; transition: width 0.3s ease;
+        }
+        #health-text {
+            color: #ddd; font-size: 13px; margin-bottom: 5px; letter-spacing: 1px;
+        }
+
+        /* Score & Kill feed */
+        #score {
+            position: absolute; top: 20px; right: 20px;
+            color: #fff; font-size: 20px;
+            text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
+        }
+        #wave-info {
+            position: absolute; top: 48px; right: 20px;
+            color: rgba(255,255,255,0.6); font-size: 14px;
+            text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
+        }
+        #killfeed {
+            position: absolute; top: 20px; left: 20px;
+            color: #fff; font-size: 13px;
+            text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
+        }
+        .killfeed-entry {
+            margin-bottom: 4px; opacity: 1;
+            transition: opacity 1s ease;
+        }
+
+        /* Minimap */
+        #minimap {
+            position: absolute; bottom: 20px; right: 20px;
+            width: 160px; height: 160px;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px; overflow: hidden;
+        }
+        #minimap-canvas { width: 100%; height: 100%; }
+
+        /* Damage flash */
+        #damage-flash {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 50;
+            background: rgba(255,0,0,0); transition: background 0.08s ease;
+        }
+
+        /* Start screen */
+        #start-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.88); z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        #start-screen h1 {
+            color: #ff6633; font-size: 56px; letter-spacing: 6px;
+            text-shadow: 0 0 30px rgba(255,102,51,0.4);
+            margin-bottom: 10px;
+        }
+        #start-screen .subtitle {
+            color: rgba(255,255,255,0.35); font-size: 14px;
+            letter-spacing: 4px; margin-bottom: 40px;
+        }
+        #start-screen .controls {
+            color: rgba(255,255,255,0.55); font-size: 15px;
+            margin-bottom: 6px; letter-spacing: 1px;
+        }
+        #start-screen .controls span { color: #ff9966; }
+        .play-btn {
+            margin-top: 40px; padding: 16px 50px;
+            background: #ff6633; border: none; color: #fff;
+            font-family: 'Courier New', monospace; font-size: 22px;
+            letter-spacing: 3px; cursor: pointer; pointer-events: all;
+            border-radius: 4px; transition: background 0.2s;
+        }
+        .play-btn:hover { background: #ff8855; }
+
+        /* Game over */
+        #game-over {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.88); z-index: 100;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+        }
+        #game-over h1 {
+            color: #ff3333; font-size: 52px; letter-spacing: 4px;
+            margin-bottom: 16px;
+        }
+        #game-over .stat {
+            color: rgba(255,255,255,0.6); font-size: 18px; margin-bottom: 6px;
+        }
+        #game-over .stat span { color: #ff9966; }
+
+        /* Active buffs */
+        #buffs {
+            position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 10px;
+        }
+        .buff-icon {
+            width: 40px; height: 40px; border-radius: 6px;
+            border: 2px solid rgba(255,255,255,0.4);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 16px; position: relative;
+            background: rgba(0,0,0,0.5);
+        }
+        .buff-icon .buff-timer {
+            position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%);
+            font-size: 10px; color: rgba(255,255,255,0.7); white-space: nowrap;
+        }
+        .buff-speed { border-color: #44ccff; color: #44ccff; }
+        .buff-shield { border-color: #44ffaa; color: #44ffaa; }
+        .buff-damage { border-color: #ff6644; color: #ff6644; }
+
+        /* Loot pickup notification */
+        #loot-popup {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            color: #fff; font-size: 22px; letter-spacing: 2px;
+            text-shadow: 0 0 15px rgba(255,200,50,0.6), 2px 2px 6px rgba(0,0,0,0.8);
+            opacity: 0; transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <div id="crosshair"><div id="crosshair-dot"></div></div>
+        <div id="charge-label">LASER CHARGE</div>
+        <div id="charge-container"><div id="charge-bar"></div></div>
+        <div id="health-container">
+            <div id="health-text">HULL INTEGRITY: 100%</div>
+            <div id="health-bar-bg"><div id="health-bar"></div></div>
+        </div>
+        <div id="score">KILLS: 0</div>
+        <div id="wave-info">WAVE 1</div>
+        <div id="killfeed"></div>
+        <div id="minimap"><canvas id="minimap-canvas" width="160" height="160"></canvas></div>
+        <div id="buffs"></div>
+        <div id="loot-popup"></div>
+    </div>
+
+    <div id="damage-flash"></div>
+
+    <div id="start-screen">
+        <h1>TANK ASSAULT</h1>
+        <div class="subtitle">DESERT STORM</div>
+        <div class="controls"><span>WASD / ZQSD</span> &mdash; Move Tank</div>
+        <div class="controls"><span>MOUSE</span> &mdash; Aim Turret</div>
+        <div class="controls"><span>HOLD SPACE</span> &mdash; Charge Laser</div>
+        <div class="controls"><span>RELEASE SPACE</span> &mdash; Fire!</div>
+        <button class="play-btn" id="start-btn">DEPLOY</button>
+    </div>
+
+    <div id="game-over">
+        <h1>DESTROYED</h1>
+        <div class="stat">Kills: <span id="final-kills">0</span></div>
+        <div class="stat">Waves Survived: <span id="final-waves">0</span></div>
+        <button class="play-btn" id="restart-btn">REDEPLOY</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
