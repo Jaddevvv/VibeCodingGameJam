@@ -78,6 +78,10 @@
     let pointerLocked = false;
     let turretTargetAngle = 0;
     let cameraPitch = 0.35;   // slight downward look
+    let paused = false;
+    let aimSensitivity = 0.003;
+    const savedSens = parseFloat(localStorage.getItem('aimSensitivity'));
+    if (!isNaN(savedSens) && savedSens > 0) aimSensitivity = savedSens;
 
     // HUD elements
     let hudCharge, hudHealth, hudHealthText, hudScore, hudWave, hudKillfeed, hudDamageFlash;
@@ -442,20 +446,20 @@
         lowerFront.castShadow = true;
         group.add(lowerFront);
 
-        // Rear engine deck (flat, grilled look)
-        const rearGeo = new THREE.BoxGeometry(4.2, 0.5, 1.8);
+        // Rear engine deck (flat, grilled look) — sits on top of upper hull
+        const rearGeo = new THREE.BoxGeometry(4.2, 0.4, 1.8);
         const rear = new THREE.Mesh(rearGeo, hullDkMat);
-        rear.position.set(0, 1.85, 3.2);
+        rear.position.set(0, 2.3, 3.2);
         rear.castShadow = true;
         group.add(rear);
 
-        // Engine exhaust vents
+        // Engine exhaust vents — sit on top of rear deck
         for (let x = -1; x <= 1; x += 2) {
-            const ventGeo = new THREE.BoxGeometry(1.2, 0.15, 1.0);
+            const ventGeo = new THREE.BoxGeometry(1.2, 0.12, 1.0);
             const vent = new THREE.Mesh(ventGeo, new THREE.MeshStandardMaterial({
                 color: 0x2A2A2A, roughness: 0.8, metalness: 0.4
             }));
-            vent.position.set(x * 1.1, 2.0, 3.3);
+            vent.position.set(x * 1.1, 2.55, 3.3);
             group.add(vent);
         }
 
@@ -514,10 +518,10 @@
             skirt.castShadow = true;
             group.add(skirt);
 
-            // Mud flap / fender
+            // Mud flap / fender — raised to sit above the track top plate
             const fenderGeo = new THREE.BoxGeometry(0.8, 0.1, 6.8);
             const fender = new THREE.Mesh(fenderGeo, hullDkMat);
-            fender.position.set(xOff, 1.52, 0);
+            fender.position.set(xOff, 1.65, 0);
             group.add(fender);
         }
 
@@ -972,7 +976,7 @@
         marker.position.y = 1.2;
         group.add(marker);
 
-        // Parachute (half-sphere)
+        // Parachute (half-sphere, dome facing up)
         const chuteGeo = new THREE.SphereGeometry(2.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
         const chuteMat = new THREE.MeshStandardMaterial({
             color: 0xEEDDCC, roughness: 0.6, metalness: 0.0,
@@ -980,27 +984,29 @@
         });
         const chute = new THREE.Mesh(chuteGeo, chuteMat);
         chute.position.y = 5;
-        chute.rotation.x = Math.PI;
         group.add(chute);
 
-        // Parachute cords (4 lines)
+        // Parachute cords — from crate attachment points up to parachute rim
         const cordMat = new THREE.MeshBasicMaterial({ color: 0x887766 });
+        const cordList = [];
+        const upAxis = new THREE.Vector3(0, 1, 0);
         for (let i = 0; i < 4; i++) {
             const angle = (i / 4) * Math.PI * 2;
-            const cordGeo = new THREE.CylinderGeometry(0.02, 0.02, 4.5, 4);
+            const start = new THREE.Vector3(Math.cos(angle) * 0.7, 0.6, Math.sin(angle) * 0.7);
+            const end = new THREE.Vector3(Math.cos(angle) * 2.5, 5, Math.sin(angle) * 2.5);
+            const dir = end.clone().sub(start);
+            const len = dir.length();
+            const cordGeo = new THREE.CylinderGeometry(0.025, 0.025, len, 4);
             const cord = new THREE.Mesh(cordGeo, cordMat);
-            cord.position.set(Math.cos(angle) * 1.0, 2.8, Math.sin(angle) * 1.0);
-            const dx = Math.cos(angle) * 1.2;
-            const dz = Math.sin(angle) * 1.2;
-            cord.lookAt(new THREE.Vector3(
-                cord.position.x + dx, cord.position.y + 4, cord.position.z + dz
-            ));
+            cord.position.copy(start).add(end).multiplyScalar(0.5);
+            cord.quaternion.setFromUnitVectors(upAxis, dir.normalize());
             group.add(cord);
+            cordList.push(cord);
         }
 
         group.userData = {
             chute, marker, markerMat,
-            cords: group.children.filter(c => c !== crate && c !== strapH && c !== strapV && c !== marker && c !== chute),
+            cords: cordList,
         };
 
         return group;
@@ -1741,9 +1747,11 @@
         requestAnimationFrame(gameLoop);
         if (!gameStarted) return;
 
-        const dt = Math.min(clock.getDelta(), 0.05);
+        const dt = paused ? 0 : Math.min(clock.getDelta(), 0.05);
+        // Keep clock in sync so dt doesn't spike on resume
+        if (paused) clock.getDelta();
 
-        if (!gameOver) {
+        if (!gameOver && !paused) {
             updatePlayer(dt);
             updateEnemies(dt);
             updateLootCrates(dt);
@@ -1757,11 +1765,33 @@
         renderer.render(scene, camera);
     }
 
+    // ── Settings / Pause ─────────────────────────────────────
+    function showSettings() {
+        if (!gameStarted || gameOver || paused) return;
+        paused = true;
+        document.getElementById('settings-menu').style.display = 'flex';
+        if (document.pointerLockElement) document.exitPointerLock();
+    }
+
+    function hideSettings() {
+        if (!paused) return;
+        paused = false;
+        document.getElementById('settings-menu').style.display = 'none';
+        if (gameStarted && !gameOver) {
+            renderer.domElement.requestPointerLock();
+        }
+    }
+
     // ── Input ────────────────────────────────────────────────
     function setupInput() {
         document.addEventListener('keydown', (e) => {
             keys[e.key.toLowerCase()] = true;
-            if (e.code === 'Space' && !gameOver && gameStarted) {
+            if (e.key === 'Escape' && gameStarted && !gameOver) {
+                if (paused) hideSettings();
+                else showSettings();
+                return;
+            }
+            if (e.code === 'Space' && !gameOver && gameStarted && !paused) {
                 e.preventDefault();
                 if (!isCharging) {
                     isCharging = true;
@@ -1772,15 +1802,15 @@
 
         document.addEventListener('keyup', (e) => {
             keys[e.key.toLowerCase()] = false;
-            if (e.code === 'Space' && isCharging && !gameOver && gameStarted) {
+            if (e.code === 'Space' && isCharging && !gameOver && gameStarted && !paused) {
                 isCharging = false;
                 firePlayerLaser();
             }
         });
 
         document.addEventListener('mousemove', (e) => {
-            if (!pointerLocked || gameOver) return;
-            turretTargetAngle -= e.movementX * 0.003;
+            if (!pointerLocked || gameOver || paused) return;
+            turretTargetAngle -= e.movementX * aimSensitivity;
         });
 
         document.addEventListener('pointerlockchange', () => {
@@ -1789,10 +1819,24 @@
 
         // Click to re-lock pointer during gameplay
         renderer.domElement.addEventListener('click', () => {
-            if (gameStarted && !gameOver && !pointerLocked) {
+            if (gameStarted && !gameOver && !pointerLocked && !paused) {
                 renderer.domElement.requestPointerLock();
             }
         });
+
+        // Settings controls
+        const sensSlider = document.getElementById('sens-slider');
+        const sensValue = document.getElementById('sens-value');
+        const sliderVal = aimSensitivity * 1000;
+        sensSlider.value = sliderVal;
+        sensValue.textContent = sliderVal.toFixed(2);
+        sensSlider.addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            aimSensitivity = v / 1000;
+            sensValue.textContent = v.toFixed(2);
+            localStorage.setItem('aimSensitivity', aimSensitivity);
+        });
+        document.getElementById('resume-btn').addEventListener('click', hideSettings);
     }
 
     // ── Init ─────────────────────────────────────────────────
