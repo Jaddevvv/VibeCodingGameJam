@@ -31,6 +31,27 @@
     const BUFF_DURATION = 30;          // seconds for timed buffs
     const LOOT_TYPES = ['health', 'speed', 'shield', 'damage'];
 
+    // ── Sniper mode ──────────────────────────────────────────
+    const SNIPER_PLATFORM_TOP = 11;     // Y of walkway top surface
+    const SNIPER_EYE_HEIGHT = 1.7;
+    // Walkway sits OUTSIDE the boundary walls so no tanks are ever beneath it
+    const SNIPER_INNER = 154;           // closest the sniper can get to the map (just outside walls at 150)
+    const SNIPER_OUTER = 170;           // outermost edge of the walkway
+    const SNIPER_WALK_SPEED = 14;
+    const SNIPER_RUN_MULT = 1.6;
+    const SNIPER_SCOPED_MOVE_MULT = 0.45;
+    const SNIPER_DAMAGE = 120;          // one-shot most enemies
+    const SNIPER_FIRE_COOLDOWN = 1.7;   // bolt-action cycle
+    const SNIPER_MAG_SIZE = 5;
+    const SNIPER_RELOAD_TIME = 2.4;
+    const SNIPER_FOV_NORMAL = 60;
+    const SNIPER_FOV_SCOPED = 14;
+    const SNIPER_JUMP_VELOCITY = 8.5;
+    const SNIPER_GRAVITY = 22;
+    const SNIPER_CROUCH_LERP = 9;
+    const SNIPER_CROUCH_HEIGHT_FACTOR = 0.5;   // crouched eye height as fraction of standing
+    const SNIPER_3P_CAM_DIST = 4.5;
+
     // ── Colors ───────────────────────────────────────────────
     const COL = {
         sand:       0xC2A66B,
@@ -71,6 +92,22 @@
     let wave = 1;
     let enemiesPerWave = INITIAL_ENEMIES;
 
+    // ── Multiplayer state ────────────────────────────────────
+    let gameMode = null;           // 'coop' | 'multiplayer'
+    let isMP = false;
+    let ws = null;
+    let myId = null;
+    let myName = 'Tank';
+    let stateSendTimer = 0;
+    const STATE_SEND_INTERVAL = 1 / 15;   // 15Hz
+    const remotePlayers = new Map();      // id -> remotePlayer
+    let pendingDead = false;
+    let respawnBannerEl = null;
+    let respawnBannerTextEl = null;
+    let respawnBannerSubEl = null;
+    let playersPanelEl = null;
+    let playersListEl = null;
+
     const keys = {};
     let mouseX = 0, mouseY = 0;
     let isCharging = false;
@@ -82,6 +119,28 @@
     let aimSensitivity = 0.003;
     const savedSens = parseFloat(localStorage.getItem('aimSensitivity'));
     if (!isNaN(savedSens) && savedSens > 0) aimSensitivity = savedSens;
+
+    // ── Sniper mode state ────────────────────────────────────
+    let isSniper = false;
+    let sniperYaw = 0;
+    let sniperPitch = 0;
+    let sniperScoped = false;
+    let sniperAmmo = SNIPER_MAG_SIZE;
+    let sniperReloading = false;
+    let sniperReloadTimer = 0;
+    let sniperFireCooldown = 0;
+    let sniperRunning = false;
+    let sniperPlatformBuilt = false;
+    let sniperPlatformMeshes = [];
+    let rifleGroup = null;        // rifle held by avatar (3rd-person)
+    let sniperHud = null;
+    let sniperVy = 0;
+    let sniperGrounded = true;
+    let sniperCrouching = false;
+    let crouchT = 0;              // 0 standing, 1 crouched (lerped)
+    let walkPhase = 0;            // walk cycle radians
+    let walkSwing = 0;             // amplitude (lerped 0..1 when moving)
+    let boundaryWalls = [];        // map perimeter wall meshes (hidden in sniper mode)
 
     // HUD elements
     let hudCharge, hudHealth, hudHealthText, hudScore, hudWave, hudKillfeed, hudDamageFlash;
@@ -180,8 +239,10 @@
     }
 
     function createTerrain() {
-        // Ground plane
-        const groundGeo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 80, 80);
+        // Ground plane — extended past the boundary walls so the outside-the-map
+        // sniper platform sits over visible desert, not void.
+        const GROUND_SIZE = MAP_SIZE + 120;
+        const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, 100, 100);
         groundGeo.rotateX(-Math.PI / 2);
 
         // Subtle height variation
@@ -226,6 +287,7 @@
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             scene.add(mesh);
+            boundaryWalls.push(mesh);
         });
     }
 
@@ -698,9 +760,11 @@
     }
 
     // ── Player Tank ──────────────────────────────────────────
-    function createPlayer() {
+    function createPlayer(spawnX, spawnZ) {
         playerGroup = createTankModel(false);
-        playerGroup.position.set(0, 0, 80);
+        const sx = (typeof spawnX === 'number') ? spawnX : 0;
+        const sz = (typeof spawnZ === 'number') ? spawnZ : 80;
+        playerGroup.position.set(sx, 0, sz);
         scene.add(playerGroup);
 
         playerTank = {
@@ -718,10 +782,16 @@
         const playerPos = playerGroup.position;
         // Find a spawn position that's not too close and not inside structures
         do {
-            const angle = Math.random() * Math.PI * 2;
-            dist = SPAWN_DISTANCE_MIN + Math.random() * 60;
-            x = playerPos.x + Math.cos(angle) * dist;
-            z = playerPos.z + Math.sin(angle) * dist;
+            if (isSniper) {
+                // Spread tanks across the whole map (player is outside the map)
+                x = (Math.random() - 0.5) * MAP_SIZE * 0.85;
+                z = (Math.random() - 0.5) * MAP_SIZE * 0.85;
+            } else {
+                const angle = Math.random() * Math.PI * 2;
+                dist = SPAWN_DISTANCE_MIN + Math.random() * 60;
+                x = playerPos.x + Math.cos(angle) * dist;
+                z = playerPos.z + Math.sin(angle) * dist;
+            }
             x = Math.max(-HALF_MAP + 10, Math.min(HALF_MAP - 10, x));
             z = Math.max(-HALF_MAP + 10, Math.min(HALF_MAP - 10, z));
         } while (isInsideStructure(x, z));
@@ -745,6 +815,7 @@
             fireTimer: Math.random() * ENEMY_FIRE_INTERVAL,
             stuckTimer: 0,
             lastPos: new THREE.Vector3(x, 0, z),
+            patrolRetargetTimer: 1 + Math.random() * 3,
         };
         enemies.push(enemy);
     }
@@ -1287,7 +1358,20 @@
             const turret = enemy.group.userData.turret;
 
             // State transitions
-            if (distToPlayer < 80) {
+            if (isSniper) {
+                // Sniper mode: tanks never attack — they just roam as moving targets.
+                enemy.state = 'patrol';
+                // Aggressively retarget so they don't sit still or hug edges
+                enemy.patrolRetargetTimer -= dt;
+                if (enemy.patrolRetargetTimer <= 0) {
+                    enemy.patrolTarget.set(
+                        (Math.random() - 0.5) * MAP_SIZE * 0.85,
+                        0,
+                        (Math.random() - 0.5) * MAP_SIZE * 0.85
+                    );
+                    enemy.patrolRetargetTimer = 2 + Math.random() * 3;
+                }
+            } else if (distToPlayer < 80) {
                 enemy.state = 'attack';
             } else if (distToPlayer < 120) {
                 enemy.state = 'chase';
@@ -1335,19 +1419,22 @@
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-            const rotSpeed = ENEMY_ROTATION_SPEED * dt;
+            const rotSpeed = ENEMY_ROTATION_SPEED * (isSniper ? 1.5 : 1) * dt;
             if (Math.abs(angleDiff) < rotSpeed) {
                 enemy.group.rotation.y = angleToTarget;
             } else {
                 enemy.group.rotation.y += Math.sign(angleDiff) * rotSpeed;
             }
 
-            // Move forward (if roughly facing target)
-            if (Math.abs(angleDiff) < 1.0) {
+            // Move forward — wider tolerance & speed boost in sniper mode keeps them roaming.
+            const moveAngleThresh = isSniper ? 1.6 : 1.0;
+            if (Math.abs(angleDiff) < moveAngleThresh) {
                 const moveDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(
                     new THREE.Vector3(0, 1, 0), enemy.group.rotation.y
                 );
-                const speed = (enemy.state === 'attack' && distToPlayer < 25) ? 0 : enemy.speed;
+                let speed = enemy.speed;
+                if (!isSniper && enemy.state === 'attack' && distToPlayer < 25) speed = 0;
+                if (isSniper) speed *= 1.4;
                 const newPos = pos.clone().add(moveDir.multiplyScalar(speed * dt));
 
                 // Clamp to map bounds
@@ -1438,6 +1525,11 @@
     // ── Player Controls ──────────────────────────────────────
     function updatePlayer(dt) {
         if (!playerTank || gameOver) return;
+        if (isMP && pendingDead) {
+            // Dead — camera still follows for spectator feel, but no input
+            updateCamera(dt);
+            return;
+        }
 
         const group = playerGroup;
         const movedir = new THREE.Vector3();
@@ -1509,6 +1601,7 @@
 
     function firePlayerLaser() {
         if (chargeAmount < 0.05) return;
+        if (isMP && pendingDead) { chargeAmount = 0; return; }
 
         let damage = MIN_LASER_DMG + (MAX_LASER_DMG - MIN_LASER_DMG) * chargeAmount;
         // Apply damage buff (+20%)
@@ -1526,7 +1619,12 @@
         barrel.localToWorld(worldEnd);
         const fireDir = new THREE.Vector3().subVectors(worldEnd, worldMuzzle).normalize();
 
-        fireLaser(worldMuzzle, fireDir, damage, true);
+        if (isMP) {
+            firePlayerLaserMP(worldMuzzle, fireDir, damage);
+            netSendFire(worldMuzzle, fireDir, damage);
+        } else {
+            fireLaser(worldMuzzle, fireDir, damage, true);
+        }
 
         // Muzzle flash
         const glowMat = playerGroup.userData.glowMat;
@@ -1556,6 +1654,422 @@
             vel: new THREE.Vector3((Math.random() - 0.5) * 2, 1 + Math.random() * 2, (Math.random() - 0.5) * 2),
             life: 0.5 + Math.random() * 0.5
         });
+    }
+
+    // ── Multiplayer: name labels ─────────────────────────────
+    function makeNameSprite(text) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, 256, 64);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        roundRect(ctx, 6, 10, 244, 44, 8);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 26px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 128, 32);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.minFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(7, 1.75, 1);
+        sprite.position.set(0, 5.5, 0);
+        sprite.userData.canvas = canvas;
+        sprite.userData.ctx = ctx;
+        sprite.userData.tex = tex;
+        sprite.renderOrder = 999;
+        return sprite;
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+    }
+
+    function updateNameSprite(sprite, text) {
+        const ctx = sprite.userData.ctx;
+        ctx.clearRect(0, 0, 256, 64);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        roundRect(ctx, 6, 10, 244, 44, 8);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 26px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 128, 32);
+        sprite.userData.tex.needsUpdate = true;
+    }
+
+    // ── Multiplayer: remote players ──────────────────────────
+    function addRemotePlayer(pData) {
+        if (!pData || !pData.id || remotePlayers.has(pData.id)) return;
+        const group = createTankModel(true);
+        group.position.set(pData.x || 0, 0, pData.z || 0);
+        group.rotation.y = pData.rotY || 0;
+        const turret = group.userData.turret;
+        turret.rotation.y = pData.turretY || 0;
+
+        const label = makeNameSprite(pData.name || ('Tank-' + pData.id));
+        group.add(label);
+
+        if (!pData.alive) group.visible = false;
+        scene.add(group);
+
+        remotePlayers.set(pData.id, {
+            id: pData.id,
+            name: pData.name || ('Tank-' + pData.id),
+            group, turret,
+            label,
+            hp: (typeof pData.hp === 'number') ? pData.hp : PLAYER_MAX_HP,
+            kills: pData.kills || 0,
+            alive: pData.alive !== false,
+            // interpolation targets
+            tx: group.position.x, ty: 0, tz: group.position.z,
+            trotY: group.rotation.y, tturretY: turret.rotation.y,
+        });
+    }
+
+    function removeRemotePlayer(id) {
+        const rp = remotePlayers.get(id);
+        if (!rp) return;
+        scene.remove(rp.group);
+        rp.group.traverse(o => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) {
+                if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+                else o.material.dispose();
+            }
+        });
+        if (rp.label && rp.label.userData.tex) rp.label.userData.tex.dispose();
+        remotePlayers.delete(id);
+    }
+
+    function updateRemotePlayers(dt) {
+        const lerpRate = Math.min(1, dt * 12);
+        for (const rp of remotePlayers.values()) {
+            const g = rp.group;
+            g.position.x += (rp.tx - g.position.x) * lerpRate;
+            g.position.z += (rp.tz - g.position.z) * lerpRate;
+
+            // shortest-path rotation lerp
+            let rDiff = rp.trotY - g.rotation.y;
+            while (rDiff > Math.PI) rDiff -= Math.PI * 2;
+            while (rDiff < -Math.PI) rDiff += Math.PI * 2;
+            g.rotation.y += rDiff * lerpRate;
+
+            let tDiff = rp.tturretY - rp.turret.rotation.y;
+            while (tDiff > Math.PI) tDiff -= Math.PI * 2;
+            while (tDiff < -Math.PI) tDiff += Math.PI * 2;
+            rp.turret.rotation.y += tDiff * lerpRate;
+        }
+    }
+
+    // ── Multiplayer: firing ──────────────────────────────────
+    function firePlayerLaserMP(origin, direction, damage) {
+        const raycaster = new THREE.Raycaster(origin, direction, 0, MAX_LASER_RANGE);
+
+        const targets = [];
+        const meshToRemote = new Map();
+        for (const rp of remotePlayers.values()) {
+            if (!rp.alive) continue;
+            rp.group.traverse(c => {
+                if (c.isMesh && !c.isSprite) {
+                    targets.push(c);
+                    meshToRemote.set(c, rp);
+                }
+            });
+        }
+        structures.forEach(s => targets.push(s.mesh));
+
+        const hits = raycaster.intersectObjects(targets, false);
+        let hitPoint = origin.clone().add(direction.clone().multiplyScalar(MAX_LASER_RANGE));
+
+        if (hits.length > 0) {
+            hitPoint = hits[0].point.clone();
+            const hitRemote = meshToRemote.get(hits[0].object);
+            if (hitRemote) {
+                spawnHitParticles(hitPoint, COL.laserGlow, 12);
+                netSendHit(hitRemote.id, damage);
+            } else {
+                spawnHitParticles(hitPoint, 0xCCBB99, 6);
+            }
+        }
+
+        createLaserBeam(origin, hitPoint, damage / MAX_LASER_DMG);
+    }
+
+    function renderRemoteFire(shooterId, origin, direction, damage) {
+        const raycaster = new THREE.Raycaster(origin, direction, 0, MAX_LASER_RANGE);
+        const targets = [];
+        structures.forEach(s => targets.push(s.mesh));
+        // Let beams visually stop on our own tank and on other players
+        if (playerGroup) {
+            playerGroup.traverse(c => { if (c.isMesh && !c.isSprite) targets.push(c); });
+        }
+        for (const rp of remotePlayers.values()) {
+            if (!rp.alive || rp.id === shooterId) continue;
+            rp.group.traverse(c => { if (c.isMesh && !c.isSprite) targets.push(c); });
+        }
+        const hits = raycaster.intersectObjects(targets, false);
+        let hitPoint = origin.clone().add(direction.clone().multiplyScalar(MAX_LASER_RANGE));
+        if (hits.length > 0) {
+            hitPoint = hits[0].point.clone();
+            spawnHitParticles(hitPoint, COL.laserGlow, 6);
+        }
+        createLaserBeam(origin, hitPoint, damage / MAX_LASER_DMG);
+    }
+
+    // ── Multiplayer: networking ──────────────────────────────
+    function netConnect(name, onReady, onError) {
+        const loc = window.location;
+        const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = proto + '//' + loc.host + '/ws';
+        try {
+            ws = new WebSocket(url);
+        } catch (e) {
+            onError && onError('Could not open WebSocket');
+            return;
+        }
+
+        let ready = false;
+        ws.addEventListener('open', () => {
+            if (name) ws.send(JSON.stringify({ type: 'name', name }));
+        });
+        ws.addEventListener('message', (ev) => {
+            let m;
+            try { m = JSON.parse(ev.data); } catch { return; }
+            handleServerMessage(m);
+            if (!ready && m.type === 'welcome') {
+                ready = true;
+                onReady && onReady(m);
+            }
+        });
+        ws.addEventListener('error', () => {
+            if (!ready) onError && onError('Could not connect to server');
+        });
+        ws.addEventListener('close', () => {
+            if (!ready) {
+                onError && onError('Connection closed before welcome');
+                return;
+            }
+            if (isMP) {
+                addKillfeedEntry('Disconnected from server');
+            }
+        });
+    }
+
+    function netSendState() {
+        if (!ws || ws.readyState !== 1 || !playerGroup) return;
+        const turretY = playerGroup.userData.turret.rotation.y;
+        ws.send(JSON.stringify({
+            type: 'state',
+            x: playerGroup.position.x,
+            y: playerGroup.position.y,
+            z: playerGroup.position.z,
+            rotY: playerGroup.rotation.y,
+            turretY,
+            charge: chargeAmount,
+        }));
+    }
+
+    function netSendFire(origin, dir, dmg) {
+        if (!ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({
+            type: 'fire',
+            ox: origin.x, oy: origin.y, oz: origin.z,
+            dx: dir.x, dy: dir.y, dz: dir.z,
+            dmg,
+        }));
+    }
+
+    function netSendHit(targetId, dmg) {
+        if (!ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'hit', targetId, dmg }));
+    }
+
+    function handleServerMessage(m) {
+        switch (m.type) {
+            case 'welcome': {
+                myId = m.id;
+                if (m.name) myName = m.name;
+                (m.players || []).forEach(addRemotePlayer);
+                break;
+            }
+            case 'join': {
+                addRemotePlayer(m.player);
+                addKillfeedEntry(m.player.name + ' joined');
+                break;
+            }
+            case 'leave': {
+                const rp = remotePlayers.get(m.id);
+                if (rp) addKillfeedEntry(rp.name + ' left');
+                removeRemotePlayer(m.id);
+                break;
+            }
+            case 'name': {
+                const rp = remotePlayers.get(m.id);
+                if (rp) { rp.name = m.name; updateNameSprite(rp.label, m.name); }
+                break;
+            }
+            case 'states': {
+                for (const s of m.players) {
+                    if (s.id === myId) continue;
+                    const rp = remotePlayers.get(s.id);
+                    if (!rp) continue;
+                    rp.tx = s.x; rp.tz = s.z;
+                    rp.trotY = s.rotY;
+                    rp.tturretY = s.turretY;
+                    if (typeof s.alive === 'boolean') {
+                        rp.alive = s.alive;
+                        rp.group.visible = s.alive;
+                    }
+                }
+                break;
+            }
+            case 'fire': {
+                if (m.id === myId) break;
+                const origin = new THREE.Vector3(m.ox, m.oy, m.oz);
+                const dir = new THREE.Vector3(m.dx, m.dy, m.dz);
+                renderRemoteFire(m.id, origin, dir, m.dmg || 0);
+                break;
+            }
+            case 'hp': {
+                if (m.id === myId) {
+                    const prevHp = playerTank ? playerTank.hp : PLAYER_MAX_HP;
+                    if (playerTank) {
+                        playerTank.hp = m.hp;
+                        if (m.hp < prevHp) flashDamage();
+                    }
+                } else {
+                    const rp = remotePlayers.get(m.id);
+                    if (rp) rp.hp = m.hp;
+                }
+                break;
+            }
+            case 'kills': {
+                if (m.id === myId) {
+                    kills = m.kills;
+                } else {
+                    const rp = remotePlayers.get(m.id);
+                    if (rp) rp.kills = m.kills;
+                }
+                break;
+            }
+            case 'death': {
+                const killer = m.killerName || 'someone';
+                const victim = m.victimName || 'a tank';
+                if (m.id === myId) {
+                    if (playerTank) playerTank.hp = 0;
+                    pendingDead = true;
+                    isCharging = false;
+                    chargeAmount = 0;
+                    if (playerGroup) {
+                        spawnExplosion(playerGroup.position.clone().add(new THREE.Vector3(0, 2, 0)));
+                        playerGroup.visible = false;
+                    }
+                    showRespawnBanner('DESTROYED', 'killed by ' + killer);
+                    addKillfeedEntryStyled('You were destroyed by ' + killer, 'mp-you-died');
+                } else if (m.killerId === myId) {
+                    addKillfeedEntryStyled('You destroyed ' + victim, 'mp-you-killed');
+                } else {
+                    addKillfeedEntryStyled(killer + ' destroyed ' + victim, 'mp-kill');
+                }
+                const rp = remotePlayers.get(m.id);
+                if (rp) {
+                    spawnExplosion(rp.group.position.clone().add(new THREE.Vector3(0, 2, 0)));
+                    rp.alive = false;
+                    rp.hp = 0;
+                    rp.group.visible = false;
+                }
+                break;
+            }
+            case 'respawn': {
+                if (m.id === myId) {
+                    pendingDead = false;
+                    hideRespawnBanner();
+                    if (playerTank) {
+                        playerTank.hp = m.hp;
+                        playerGroup.position.set(m.x, 0, m.z);
+                        playerGroup.visible = true;
+                    }
+                } else {
+                    const rp = remotePlayers.get(m.id);
+                    if (rp) {
+                        rp.alive = true;
+                        rp.hp = m.hp;
+                        rp.group.position.set(m.x, 0, m.z);
+                        rp.tx = m.x; rp.tz = m.z;
+                        rp.group.visible = true;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    function showRespawnBanner(title, sub) {
+        if (!respawnBannerEl) return;
+        respawnBannerTextEl.textContent = title;
+        respawnBannerSubEl.textContent = sub;
+        respawnBannerEl.style.display = 'block';
+    }
+
+    function hideRespawnBanner() {
+        if (!respawnBannerEl) return;
+        respawnBannerEl.style.display = 'none';
+    }
+
+    function addKillfeedEntryStyled(text, cls) {
+        const el = document.createElement('div');
+        el.className = 'killfeed-entry ' + (cls || '');
+        el.textContent = text;
+        hudKillfeed.prepend(el);
+        setTimeout(() => {
+            el.style.opacity = '0';
+            setTimeout(() => el.remove(), 1000);
+        }, 3500);
+    }
+
+    function updatePlayersPanel() {
+        if (!isMP || !playersListEl) return;
+        const rows = [];
+        rows.push({
+            id: myId || 'me',
+            name: myName + ' (you)',
+            kills: kills,
+            alive: !pendingDead,
+            me: true,
+        });
+        for (const rp of remotePlayers.values()) {
+            rows.push({
+                id: rp.id, name: rp.name, kills: rp.kills,
+                alive: rp.alive, me: false,
+            });
+        }
+        rows.sort((a, b) => b.kills - a.kills);
+
+        let html = '';
+        for (const r of rows) {
+            html += '<div class="player-row' + (r.alive ? '' : ' dead') + '">'
+                + '<span class="player-name' + (r.me ? ' me' : '') + '">' + escapeHtml(r.name) + '</span>'
+                + '<span class="player-kills">' + r.kills + '</span>'
+                + '</div>';
+        }
+        playersListEl.innerHTML = html;
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
     }
 
     // ── Camera ───────────────────────────────────────────────
@@ -1607,11 +2121,26 @@
             hudHealth.style.background = 'linear-gradient(90deg, #ff3333, #ff6644)';
         }
 
-        hudHealthText.textContent = 'HULL INTEGRITY: ' + Math.ceil(hpPct) + '%';
+        hudHealthText.textContent = isSniper
+            ? 'BODY ARMOR: ' + Math.ceil(hpPct) + '%'
+            : 'HULL INTEGRITY: ' + Math.ceil(hpPct) + '%';
 
         // Score
         hudScore.textContent = 'KILLS: ' + kills;
-        hudWave.textContent = 'WAVE ' + wave;
+        if (isMP) {
+            hudWave.textContent = 'PLAYERS: ' + (remotePlayers.size + 1);
+        } else {
+            hudWave.textContent = 'WAVE ' + wave;
+        }
+
+        // Sniper-specific HUD overlays
+        if (isSniper) {
+            const scopeEl = document.getElementById('scope-overlay');
+            const crossEl = document.getElementById('crosshair');
+            if (scopeEl) scopeEl.style.display = sniperScoped ? 'block' : 'none';
+            if (crossEl) crossEl.style.display = sniperScoped ? 'none' : 'block';
+            if (sniperReloading) updateSniperHud();
+        }
     }
 
     function flashDamage() {
@@ -1676,6 +2205,19 @@
             ctx.fill();
         }
 
+        // Remote players
+        if (isMP) {
+            ctx.fillStyle = '#ff9966';
+            for (const rp of remotePlayers.values()) {
+                if (!rp.alive) continue;
+                const rx = (rp.group.position.x + HALF_MAP) * scale;
+                const rz = (rp.group.position.z + HALF_MAP) * scale;
+                ctx.beginPath();
+                ctx.arc(rx, rz, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
         // Player
         if (playerGroup) {
             const px = (playerGroup.position.x + HALF_MAP) * scale;
@@ -1733,13 +2275,144 @@
         activeBuffs = { speed: 0, shield: 0, damage: 0 };
         document.getElementById('buffs').innerHTML = '';
 
-        createPlayer();
+        if (isSniper) {
+            // Detach old rifle from camera so we don't double-attach
+            if (rifleGroup) {
+                camera.remove(rifleGroup);
+                rifleGroup.traverse(o => {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) o.material.dispose();
+                });
+                rifleGroup = null;
+            }
+            createSniperPlayer();
+            updateSniperHud();
+        } else {
+            createPlayer();
+        }
         for (let i = 0; i < enemiesPerWave; i++) {
             spawnEnemy();
         }
 
         document.getElementById('game-over').style.display = 'none';
         renderer.domElement.requestPointerLock();
+    }
+
+    // ── Quit to main menu ────────────────────────────────────
+    function quitToMenu() {
+        // Hide menus / overlays
+        document.getElementById('settings-menu').style.display = 'none';
+        document.getElementById('game-over').style.display = 'none';
+        if (document.pointerLockElement) document.exitPointerLock();
+
+        // Tear down enemies / projectiles / particles / loot
+        enemies.forEach(e => scene.remove(e.group));
+        enemies = [];
+        laserBeams.forEach(lb => {
+            scene.remove(lb.beam);
+            scene.remove(lb.glowBeam);
+            if (lb.beam.geometry) lb.beam.geometry.dispose();
+            if (lb.glowBeam.geometry) lb.glowBeam.geometry.dispose();
+            if (lb.mat) lb.mat.dispose();
+            if (lb.glowMat) lb.glowMat.dispose();
+        });
+        laserBeams = [];
+        particles.forEach(p => {
+            scene.remove(p.mesh);
+            if (p.mesh.geometry) p.mesh.geometry.dispose();
+            if (p.mat) p.mat.dispose();
+        });
+        particles = [];
+        lootCrates.forEach(l => scene.remove(l.group));
+        lootCrates = [];
+        removeShieldVisual();
+
+        // Tear down sniper platform
+        sniperPlatformMeshes.forEach(m => {
+            scene.remove(m);
+            if (m.geometry) m.geometry.dispose();
+            if (m.material) {
+                if (Array.isArray(m.material)) m.material.forEach(x => x.dispose());
+                else m.material.dispose();
+            }
+        });
+        sniperPlatformMeshes = [];
+        sniperPlatformBuilt = false;
+
+        // Restore boundary walls
+        boundaryWalls.forEach(w => { w.visible = true; });
+
+        // Tear down remote players (MP)
+        for (const id of Array.from(remotePlayers.keys())) {
+            removeRemotePlayer(id);
+        }
+
+        // Close WS if open
+        if (ws) {
+            try { ws.close(); } catch (e) {}
+            ws = null;
+        }
+
+        // Tear down player + rifle
+        if (playerGroup) {
+            scene.remove(playerGroup);
+            playerGroup = null;
+        }
+        playerTank = null;
+        if (rifleGroup) {
+            camera.remove(rifleGroup);
+            rifleGroup.traverse(o => {
+                if (o.geometry) o.geometry.dispose();
+                if (o.material) {
+                    if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+                    else o.material.dispose();
+                }
+            });
+            rifleGroup = null;
+        }
+
+        // Reset game state
+        kills = 0;
+        wave = 1;
+        enemiesPerWave = INITIAL_ENEMIES;
+        gameStarted = false;
+        gameOver = false;
+        paused = false;
+        chargeAmount = 0;
+        isCharging = false;
+        turretTargetAngle = 0;
+        lootSpawnTimer = 8;
+        activeBuffs = { speed: 0, shield: 0, damage: 0 };
+        pendingDead = false;
+        myId = null;
+        gameMode = null;
+        isMP = false;
+        isSniper = false;
+        sniperScoped = false;
+        sniperReloading = false;
+        sniperFireCooldown = 0;
+        sniperAmmo = SNIPER_MAG_SIZE;
+
+        // Reset HUD visibility
+        document.getElementById('buffs').innerHTML = '';
+        document.getElementById('charge-container').style.display = '';
+        document.getElementById('charge-label').style.display = '';
+        if (sniperHud) sniperHud.style.display = 'none';
+        const scopeEl = document.getElementById('scope-overlay');
+        if (scopeEl) scopeEl.style.display = 'none';
+        const crossEl = document.getElementById('crosshair');
+        if (crossEl) crossEl.style.display = 'block';
+        if (playersPanelEl) playersPanelEl.style.display = 'none';
+        hideRespawnBanner();
+
+        // Restore default camera FOV
+        camera.fov = 60;
+        camera.updateProjectionMatrix();
+
+        // Show start screen
+        document.getElementById('start-screen').style.display = 'flex';
+        const cs = document.getElementById('connection-status');
+        if (cs) cs.textContent = '';
     }
 
     // ── Game Loop ────────────────────────────────────────────
@@ -1752,15 +2425,30 @@
         if (paused) clock.getDelta();
 
         if (!gameOver && !paused) {
-            updatePlayer(dt);
-            updateEnemies(dt);
-            updateLootCrates(dt);
-            updateBuffs(dt);
+            if (isSniper) {
+                updateSniperPlayer(dt);
+                updateEnemies(dt);
+            } else {
+                updatePlayer(dt);
+                if (!isMP) {
+                    updateEnemies(dt);
+                    updateLootCrates(dt);
+                    updateBuffs(dt);
+                } else {
+                    updateRemotePlayers(dt);
+                    stateSendTimer += dt;
+                    if (stateSendTimer >= STATE_SEND_INTERVAL) {
+                        stateSendTimer = 0;
+                        netSendState();
+                    }
+                }
+            }
         }
         updateLaserBeams(dt);
         updateParticles(dt);
         updateHUD();
         updateMinimap();
+        if (isMP) updatePlayersPanel();
 
         renderer.render(scene, camera);
     }
@@ -1771,6 +2459,8 @@
         paused = true;
         document.getElementById('settings-menu').style.display = 'flex';
         if (document.pointerLockElement) document.exitPointerLock();
+        // Clear scope state — mouseup may not fire after pointer unlock
+        if (isSniper) sniperScoped = false;
     }
 
     function hideSettings() {
@@ -1785,10 +2475,26 @@
     // ── Input ────────────────────────────────────────────────
     function setupInput() {
         document.addEventListener('keydown', (e) => {
-            keys[e.key.toLowerCase()] = true;
+            const keyLower = e.key.toLowerCase();
+            const wasPressed = !!keys[keyLower];
+            keys[keyLower] = true;
+
             if (e.key === 'Escape' && gameStarted && !gameOver) {
                 if (paused) hideSettings();
                 else showSettings();
+                return;
+            }
+            if (isSniper) {
+                if (e.code === 'Space' && !wasPressed && gameStarted && !gameOver && !paused) {
+                    e.preventDefault();
+                    if (sniperGrounded) {
+                        sniperVy = SNIPER_JUMP_VELOCITY;
+                        sniperGrounded = false;
+                    }
+                }
+                if ((e.key === 'r' || e.key === 'R') && gameStarted && !gameOver && !paused) {
+                    startSniperReload();
+                }
                 return;
             }
             if (e.code === 'Space' && !gameOver && gameStarted && !paused) {
@@ -1802,6 +2508,7 @@
 
         document.addEventListener('keyup', (e) => {
             keys[e.key.toLowerCase()] = false;
+            if (isSniper) return;
             if (e.code === 'Space' && isCharging && !gameOver && gameStarted && !paused) {
                 isCharging = false;
                 firePlayerLaser();
@@ -1810,7 +2517,34 @@
 
         document.addEventListener('mousemove', (e) => {
             if (!pointerLocked || gameOver || paused) return;
-            turretTargetAngle -= e.movementX * aimSensitivity;
+            if (isSniper) {
+                const sens = sniperScoped ? aimSensitivity * 0.35 : aimSensitivity;
+                sniperYaw -= e.movementX * sens;
+                sniperPitch -= e.movementY * sens;
+                const lim = Math.PI / 2 - 0.05;
+                if (sniperPitch > lim) sniperPitch = lim;
+                if (sniperPitch < -lim) sniperPitch = -lim;
+            } else {
+                turretTargetAngle -= e.movementX * aimSensitivity;
+            }
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            if (!isSniper || !gameStarted || gameOver || paused || !pointerLocked) return;
+            if (e.button === 0) {
+                fireSniperRifle();
+            } else if (e.button === 2) {
+                sniperScoped = true;
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (!isSniper) return;
+            if (e.button === 2) sniperScoped = false;
+        });
+
+        document.addEventListener('contextmenu', (e) => {
+            if (isSniper && pointerLocked) e.preventDefault();
         });
 
         document.addEventListener('pointerlockchange', () => {
@@ -1835,8 +2569,576 @@
             aimSensitivity = v / 1000;
             sensValue.textContent = v.toFixed(2);
             localStorage.setItem('aimSensitivity', aimSensitivity);
+            const ss = document.getElementById('start-sens-slider');
+            const sv = document.getElementById('start-sens-value');
+            if (ss) ss.value = v;
+            if (sv) sv.textContent = v.toFixed(2);
         });
         document.getElementById('resume-btn').addEventListener('click', hideSettings);
+        document.getElementById('quit-menu-btn').addEventListener('click', quitToMenu);
+    }
+
+    // ── Sniper Mode ──────────────────────────────────────────
+    function trackPlatform(mesh) {
+        scene.add(mesh);
+        sniperPlatformMeshes.push(mesh);
+        return mesh;
+    }
+
+    function createSniperPlatform() {
+        if (sniperPlatformBuilt) return;
+        sniperPlatformBuilt = true;
+
+        const conTex = makeConcreteTexture();
+        const floorMat = new THREE.MeshStandardMaterial({
+            map: conTex, color: COL.concrete, roughness: 0.85, metalness: 0.05
+        });
+        const baseMat = new THREE.MeshStandardMaterial({
+            map: conTex, color: COL.concreteDk, roughness: 0.9, metalness: 0.05
+        });
+        const railMat = new THREE.MeshStandardMaterial({
+            color: COL.concreteDk, roughness: 0.9, metalness: 0.05
+        });
+        const sandbagMat = new THREE.MeshStandardMaterial({
+            color: COL.sandDark, roughness: 0.95, metalness: 0
+        });
+
+        const cx = (SNIPER_INNER + SNIPER_OUTER) / 2;
+        const width = SNIPER_OUTER - SNIPER_INNER;
+        const length = (SNIPER_OUTER * 2) + 4;            // long enough to cover corners
+        const yCenter = SNIPER_PLATFORM_TOP - 0.5;        // top at y=11
+        const baseHeight = SNIPER_PLATFORM_TOP - 0.5;     // foundation top meets floor underside
+        const baseY = baseHeight / 2;                    // center of foundation
+
+        function addFloor(x, z, w, h, d) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mesh = new THREE.Mesh(geo, floorMat);
+            mesh.position.set(x, yCenter, z);
+            mesh.receiveShadow = true;
+            mesh.castShadow = true;
+            trackPlatform(mesh);
+        }
+
+        function addBase(x, z, w, d) {
+            const geo = new THREE.BoxGeometry(w, baseHeight, d);
+            const mesh = new THREE.Mesh(geo, baseMat);
+            mesh.position.set(x, baseY, z);
+            mesh.receiveShadow = true;
+            mesh.castShadow = true;
+            trackPlatform(mesh);
+        }
+
+        // Foundation columns (visible "tower" under the walkway, ground → platform)
+        addBase(0, -cx, length, width);
+        addBase(0,  cx, length, width);
+        addBase(-cx, 0, width, length);
+        addBase( cx, 0, width, length);
+
+        // Walkway top
+        addFloor(0, -cx, length, 1, width);
+        addFloor(0,  cx, length, 1, width);
+        addFloor(-cx, 0, width, 1, length);
+        addFloor( cx, 0, width, 1, length);
+
+        // Inner low railing (knee-high)
+        const railH = 0.6;
+        const railThick = 0.4;
+        const railY = SNIPER_PLATFORM_TOP + railH / 2;
+        const railLen = 2 * SNIPER_INNER - 8;     // spans inner edge, leaves corners open
+
+        function addRail(x, z, w, d) {
+            const geo = new THREE.BoxGeometry(w, railH, d);
+            const mesh = new THREE.Mesh(geo, railMat);
+            mesh.position.set(x, railY, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            trackPlatform(mesh);
+        }
+        addRail(0, -SNIPER_INNER, railLen, railThick);
+        addRail(0,  SNIPER_INNER, railLen, railThick);
+        addRail(-SNIPER_INNER, 0, railThick, railLen);
+        addRail( SNIPER_INNER, 0, railThick, railLen);
+
+        // Sandbag stacks (cover at the inner edge, facing the map)
+        function addSandbag(x, y, z, w, h, d, ry) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mesh = new THREE.Mesh(geo, sandbagMat);
+            mesh.position.set(x, y, z);
+            mesh.rotation.y = ry || 0;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            trackPlatform(mesh);
+        }
+        const bagStride = 30;
+        const bagRange = SNIPER_INNER - 18;   // skip corners
+        // South / north strips — bag length runs along x
+        for (let v = -bagRange; v <= bagRange; v += bagStride) {
+            for (let row = 0; row < 2; row++) {
+                for (let i = 0; i < 3; i++) {
+                    const x = v + (i - 1) * 1.25 + row * 0.4;
+                    const y = SNIPER_PLATFORM_TOP + 0.25 + row * 0.45;
+                    addSandbag(x, y, -SNIPER_INNER + 0.6, 1.2, 0.45, 0.7, (i - 1) * 0.05);
+                    addSandbag(x, y,  SNIPER_INNER - 0.6, 1.2, 0.45, 0.7, (i - 1) * 0.05);
+                }
+            }
+        }
+        // East / west strips — bag length runs along z
+        for (let v = -bagRange; v <= bagRange; v += bagStride) {
+            for (let row = 0; row < 2; row++) {
+                for (let i = 0; i < 3; i++) {
+                    const z = v + (i - 1) * 1.25 + row * 0.4;
+                    const y = SNIPER_PLATFORM_TOP + 0.25 + row * 0.45;
+                    addSandbag(-SNIPER_INNER + 0.6, y, z, 0.7, 0.45, 1.2, (i - 1) * 0.05);
+                    addSandbag( SNIPER_INNER - 0.6, y, z, 0.7, 0.45, 1.2, (i - 1) * 0.05);
+                }
+            }
+        }
+
+        // Corner watchtowers (small raised crates the sniper can stand on)
+        const corners = [
+            [ SNIPER_OUTER - 4,  SNIPER_OUTER - 4],
+            [ SNIPER_OUTER - 4, -(SNIPER_OUTER - 4)],
+            [-(SNIPER_OUTER - 4),  SNIPER_OUTER - 4],
+            [-(SNIPER_OUTER - 4), -(SNIPER_OUTER - 4)],
+        ];
+        for (const [cxp, czp] of corners) {
+            const tower = new THREE.Mesh(
+                new THREE.BoxGeometry(3, 1.4, 3),
+                railMat
+            );
+            tower.position.set(cxp, SNIPER_PLATFORM_TOP + 0.7, czp);
+            tower.castShadow = true;
+            tower.receiveShadow = true;
+            trackPlatform(tower);
+        }
+    }
+
+    function createSniperRifleViewmodel() {
+        const g = new THREE.Group();
+        const wood = new THREE.MeshStandardMaterial({ color: 0x4a2e1f, roughness: 0.7, metalness: 0.05 });
+        const metal = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.4, metalness: 0.7 });
+        const scope = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.3, metalness: 0.8 });
+
+        // Stock (wood)
+        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.45), wood);
+        stock.position.set(0, -0.04, 0.18);
+        g.add(stock);
+        // Receiver
+        const recv = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.25), metal);
+        recv.position.set(0, 0, -0.05);
+        g.add(recv);
+        // Barrel
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.7, 10), metal);
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.set(0, 0.005, -0.5);
+        g.add(barrel);
+        // Scope
+        const scopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.22, 12), scope);
+        scopeBody.rotation.x = Math.PI / 2;
+        scopeBody.position.set(0, 0.07, -0.05);
+        g.add(scopeBody);
+        // Scope rings
+        const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.01, 6, 12), metal);
+        ring1.position.set(0, 0.07, 0.04); ring1.rotation.x = Math.PI / 2;
+        g.add(ring1);
+        const ring2 = ring1.clone();
+        ring2.position.z = -0.14;
+        g.add(ring2);
+        // Magazine
+        const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.07), metal);
+        mag.position.set(0, -0.07, -0.02);
+        g.add(mag);
+        // Trigger guard
+        const guard = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.006, 4, 10, Math.PI), metal);
+        guard.position.set(0, -0.05, 0.04);
+        guard.rotation.x = Math.PI / 2;
+        g.add(guard);
+
+        return g;
+    }
+
+    function createRoundedAvatar() {
+        const group = new THREE.Group();
+
+        const skin      = new THREE.MeshStandardMaterial({ color: 0xc9a07a, roughness: 0.6, metalness: 0 });
+        const skinDk    = new THREE.MeshStandardMaterial({ color: 0xa67854, roughness: 0.7, metalness: 0 });
+        const fatigue   = new THREE.MeshStandardMaterial({ color: 0x556b3f, roughness: 0.9, metalness: 0 });
+        const fatigueDk = new THREE.MeshStandardMaterial({ color: 0x3a4a2a, roughness: 0.9, metalness: 0 });
+        const helmMat   = new THREE.MeshStandardMaterial({ color: 0x4a4a3a, roughness: 0.7, metalness: 0.15 });
+        const bootMat   = new THREE.MeshStandardMaterial({ color: 0x2a1d12, roughness: 0.85, metalness: 0 });
+        const strapMat  = new THREE.MeshStandardMaterial({ color: 0x2a2a22, roughness: 0.85, metalness: 0.05 });
+        const visorMat  = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4, metalness: 0.3 });
+
+        // ── HIPS / TORSO ─────────────────────────────────────
+        const hips = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 12), fatigueDk);
+        hips.position.y = 0.95;
+        hips.scale.set(1.25, 0.7, 0.85);
+        hips.castShadow = true;
+        group.add(hips);
+
+        const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.5, 6, 14), fatigue);
+        torso.position.y = 1.32;
+        torso.scale.set(1.18, 1, 0.78);
+        torso.castShadow = true;
+        group.add(torso);
+
+        const vest = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 12), fatigueDk);
+        vest.position.set(0, 1.32, -0.08);
+        vest.scale.set(1.08, 0.85, 0.45);
+        vest.castShadow = true;
+        group.add(vest);
+
+        // Belt
+        const belt = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.05, 6, 18), fatigueDk);
+        belt.position.y = 0.96;
+        belt.rotation.x = Math.PI / 2;
+        belt.scale.set(1.1, 1, 0.7);
+        group.add(belt);
+
+        // Diagonal sling
+        const strap = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.03, 5, 16, Math.PI), strapMat);
+        strap.position.y = 1.3;
+        strap.rotation.set(Math.PI / 2, 0, 0.7);
+        group.add(strap);
+
+        // ── NECK / HEAD ──────────────────────────────────────
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.1, 12), skinDk);
+        neck.position.y = 1.7;
+        neck.castShadow = true;
+        group.add(neck);
+
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 14), skin);
+        head.position.y = 1.85;
+        head.scale.set(0.95, 1.05, 1);
+        head.castShadow = true;
+        group.add(head);
+
+        const helm = new THREE.Mesh(
+            new THREE.SphereGeometry(0.235, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.55),
+            helmMat
+        );
+        helm.position.y = 1.93;
+        helm.castShadow = true;
+        group.add(helm);
+
+        // Helmet visor band (front strip)
+        const visor = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.235, 0.235, 0.05, 18, 1, true, -0.55, 1.1),
+            visorMat
+        );
+        visor.position.y = 1.86;
+        group.add(visor);
+
+        // ── SHOULDERS / ARMS (pivot groups) ──────────────────
+        function makeArm(side) {
+            const pivot = new THREE.Group();
+            pivot.position.set(side * 0.36, 1.55, 0);
+            // Holding-rifle base pose
+            pivot.rotation.x = 0.95;
+            pivot.rotation.z = side * 0.05;
+
+            const upArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.32, 4, 10), fatigue);
+            upArm.position.y = -0.2;
+            upArm.castShadow = true;
+            pivot.add(upArm);
+
+            const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), fatigue);
+            elbow.position.y = -0.42;
+            pivot.add(elbow);
+
+            const farmPivot = new THREE.Group();
+            farmPivot.position.y = -0.42;
+            farmPivot.rotation.x = -0.55;
+            pivot.add(farmPivot);
+
+            const farm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.28, 4, 10), fatigue);
+            farm.position.y = -0.18;
+            farm.castShadow = true;
+            farmPivot.add(farm);
+
+            const hand = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), skin);
+            hand.position.y = -0.36;
+            hand.castShadow = true;
+            farmPivot.add(hand);
+
+            return pivot;
+        }
+        const lShoulder = makeArm(-1);
+        const rShoulder = makeArm(1);
+        group.add(lShoulder);
+        group.add(rShoulder);
+
+        // ── HIP / LEGS (pivot groups for walk anim) ──────────
+        function makeLeg(side) {
+            const pivot = new THREE.Group();
+            pivot.position.set(side * 0.13, 0.88, 0);
+
+            const upLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.42, 4, 12), fatigueDk);
+            upLeg.position.y = -0.27;
+            upLeg.castShadow = true;
+            pivot.add(upLeg);
+
+            const knee = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), fatigueDk);
+            knee.position.y = -0.52;
+            pivot.add(knee);
+
+            const lowLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.36, 4, 12), fatigueDk);
+            lowLeg.position.y = -0.72;
+            lowLeg.castShadow = true;
+            pivot.add(lowLeg);
+
+            const boot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), bootMat);
+            boot.position.set(0, -0.92, 0.08);
+            boot.scale.set(1, 0.6, 1.6);
+            boot.castShadow = true;
+            pivot.add(boot);
+
+            return pivot;
+        }
+        const lHip = makeLeg(-1);
+        const rHip = makeLeg(1);
+        group.add(lHip);
+        group.add(rHip);
+
+        // ── RIFLE (held in front of chest) ───────────────────
+        const rifle = createSniperRifleViewmodel();
+        rifle.scale.setScalar(1.7);
+        rifle.position.set(0.05, 1.18, -0.45);
+        rifle.rotation.set(-0.05, 0.05, 0);
+        group.add(rifle);
+
+        group.userData = {
+            head, helm, rifle,
+            leftHip: lHip, rightHip: rHip,
+            leftShoulder: lShoulder, rightShoulder: rShoulder,
+        };
+        return group;
+    }
+
+    function createSniperPlayer() {
+        const group = createRoundedAvatar();
+        // Spawn near the south edge of the perimeter, looking inward
+        group.position.set(0, SNIPER_PLATFORM_TOP, SNIPER_OUTER - 4);
+        scene.add(group);
+        playerGroup = group;
+
+        playerTank = {
+            group: group,
+            hp: PLAYER_MAX_HP,
+            maxHp: PLAYER_MAX_HP,
+            speed: SNIPER_WALK_SPEED,
+            velocity: new THREE.Vector3(),
+        };
+
+        sniperYaw = Math.PI;     // facing -z
+        sniperPitch = -0.1;
+        sniperVy = 0;
+        sniperGrounded = true;
+        sniperCrouching = false;
+        crouchT = 0;
+        playerGroup.rotation.y = sniperYaw;
+
+        rifleGroup = group.userData.rifle;
+
+        sniperAmmo = SNIPER_MAG_SIZE;
+        sniperReloading = false;
+        sniperReloadTimer = 0;
+        sniperFireCooldown = 0;
+        sniperScoped = false;
+        camera.fov = SNIPER_FOV_NORMAL;
+        camera.updateProjectionMatrix();
+    }
+
+    function updateSniperPlayer(dt) {
+        if (!playerTank || gameOver) return;
+
+        // Cooldowns
+        if (sniperFireCooldown > 0) sniperFireCooldown = Math.max(0, sniperFireCooldown - dt);
+        if (sniperReloading) {
+            sniperReloadTimer -= dt;
+            if (sniperReloadTimer <= 0) {
+                sniperReloading = false;
+                sniperAmmo = SNIPER_MAG_SIZE;
+            }
+        }
+
+        // Crouch (held key) — scope-aim disables jump but allows crouch
+        sniperCrouching = !!(keys['c'] || keys['control']);
+        const targetCrouch = sniperCrouching ? 1 : 0;
+        crouchT += (targetCrouch - crouchT) * Math.min(1, dt * SNIPER_CROUCH_LERP);
+
+        // XZ movement
+        const forward = new THREE.Vector3(-Math.sin(sniperYaw), 0, -Math.cos(sniperYaw));
+        const right = new THREE.Vector3(Math.cos(sniperYaw), 0, -Math.sin(sniperYaw));
+
+        const moveDir = new THREE.Vector3();
+        if (keys['w'] || keys['z'] || keys['arrowup']) moveDir.add(forward);
+        if (keys['s'] || keys['arrowdown']) moveDir.sub(forward);
+        if (keys['d'] || keys['arrowright']) moveDir.add(right);
+        if (keys['a'] || keys['q'] || keys['arrowleft']) moveDir.sub(right);
+
+        sniperRunning = !!keys['shift'] && !sniperCrouching && !sniperScoped;
+
+        if (moveDir.lengthSq() > 0) {
+            moveDir.normalize();
+            let speed = SNIPER_WALK_SPEED;
+            if (sniperRunning) speed *= SNIPER_RUN_MULT;
+            if (sniperScoped) speed *= SNIPER_SCOPED_MOVE_MULT;
+            if (sniperCrouching) speed *= 0.55;
+            const step = speed * dt;
+
+            const pos = playerGroup.position;
+            const tryMove = (dx, dz) => {
+                const nx = pos.x + dx;
+                const nz = pos.z + dz;
+                const inOuter = Math.abs(nx) <= SNIPER_OUTER && Math.abs(nz) <= SNIPER_OUTER;
+                const onPerim = Math.abs(nx) >= SNIPER_INNER || Math.abs(nz) >= SNIPER_INNER;
+                if (inOuter && onPerim) { pos.x = nx; pos.z = nz; return true; }
+                return false;
+            };
+            const dx = moveDir.x * step;
+            const dz = moveDir.z * step;
+            if (!tryMove(dx, dz)) { tryMove(dx, 0) || tryMove(0, dz); }
+        }
+
+        // Vertical physics (jump + gravity). Jump itself is started in keydown.
+        if (!sniperGrounded || sniperVy !== 0) {
+            sniperVy -= SNIPER_GRAVITY * dt;
+            playerGroup.position.y += sniperVy * dt;
+            if (playerGroup.position.y <= SNIPER_PLATFORM_TOP) {
+                playerGroup.position.y = SNIPER_PLATFORM_TOP;
+                sniperVy = 0;
+                sniperGrounded = true;
+            } else {
+                sniperGrounded = false;
+            }
+        } else {
+            playerGroup.position.y = SNIPER_PLATFORM_TOP;
+        }
+
+        playerGroup.rotation.y = sniperYaw;
+
+        // Visual crouch — squash the avatar Y to indicate crouch
+        const sy = 1 - crouchT * (1 - SNIPER_CROUCH_HEIGHT_FACTOR);
+        playerGroup.scale.set(1, sy, 1);
+
+        // Walk-cycle animation (legs swing while moving on the ground)
+        const moving = (moveDir.lengthSq() > 0) && sniperGrounded;
+        const targetSwing = moving ? 1 : 0;
+        walkSwing += (targetSwing - walkSwing) * Math.min(1, dt * 10);
+        if (moving) walkPhase += dt * (sniperRunning ? 13 : 9);
+        const swing = Math.sin(walkPhase) * 0.6 * walkSwing;
+        const ud = playerGroup.userData;
+        if (ud && ud.leftHip)  ud.leftHip.rotation.x  =  swing;
+        if (ud && ud.rightHip) ud.rightHip.rotation.x = -swing;
+        // Subtle counter-sway in shoulders so the upper body feels alive
+        if (ud && ud.leftShoulder)  ud.leftShoulder.rotation.x  = 0.95 - swing * 0.12;
+        if (ud && ud.rightShoulder) ud.rightShoulder.rotation.x = 0.95 + swing * 0.12;
+
+        // FOV scope lerp
+        const targetFov = sniperScoped ? SNIPER_FOV_SCOPED : SNIPER_FOV_NORMAL;
+        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 12);
+        camera.updateProjectionMatrix();
+
+        updateSniperCamera();
+    }
+
+    function effectiveEyeHeight() {
+        // Eye drops with crouch (and avatar squash)
+        return SNIPER_EYE_HEIGHT * (1 - crouchT * (1 - SNIPER_CROUCH_HEIGHT_FACTOR));
+    }
+
+    function updateSniperCamera() {
+        const eyeY = playerGroup.position.y + effectiveEyeHeight();
+        const cp = Math.cos(sniperPitch);
+        const sp = Math.sin(sniperPitch);
+
+        if (sniperScoped) {
+            // First-person scope view
+            camera.position.set(playerGroup.position.x, eyeY, playerGroup.position.z);
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = sniperYaw;
+            camera.rotation.x = sniperPitch;
+            camera.rotation.z = 0;
+            playerGroup.visible = false;
+        } else {
+            // Third-person orbit camera (behind & slightly above the player)
+            playerGroup.visible = true;
+            const dist = SNIPER_3P_CAM_DIST;
+            const camX = playerGroup.position.x + Math.sin(sniperYaw) * dist * cp;
+            const camY = eyeY + 0.3 - sp * dist;
+            const camZ = playerGroup.position.z + Math.cos(sniperYaw) * dist * cp;
+            camera.position.set(camX, camY, camZ);
+
+            const lookAhead = 8;
+            const lookX = playerGroup.position.x - Math.sin(sniperYaw) * lookAhead * cp;
+            const lookY = eyeY + sp * lookAhead;
+            const lookZ = playerGroup.position.z - Math.cos(sniperYaw) * lookAhead * cp;
+            camera.lookAt(lookX, lookY, lookZ);
+        }
+    }
+
+    function fireSniperRifle() {
+        if (gameOver || paused || !pointerLocked) return;
+        if (!sniperScoped) {
+            flashAimHint();
+            return;
+        }
+        if (sniperReloading) return;
+        if (sniperFireCooldown > 0) return;
+        if (sniperAmmo <= 0) { startSniperReload(); return; }
+
+        sniperAmmo--;
+        sniperFireCooldown = SNIPER_FIRE_COOLDOWN;
+
+        // Origin: at the player's chest/eye, so the beam visually starts from the avatar
+        const originY = playerGroup.position.y + effectiveEyeHeight() - 0.05;
+        const origin = new THREE.Vector3(playerGroup.position.x, originY, playerGroup.position.z);
+        const cp = Math.cos(sniperPitch);
+        const dir = new THREE.Vector3(
+            -Math.sin(sniperYaw) * cp,
+             Math.sin(sniperPitch),
+            -Math.cos(sniperYaw) * cp
+        ).normalize();
+
+        fireLaser(origin, dir, SNIPER_DAMAGE, true);
+
+        // Recoil — pitch kicks up
+        sniperPitch += 0.04 + Math.random() * 0.02;
+        const lim = Math.PI / 2 - 0.05;
+        if (sniperPitch > lim) sniperPitch = lim;
+
+        if (sniperAmmo === 0) startSniperReload();
+        updateSniperHud();
+    }
+
+    function startSniperReload() {
+        if (sniperReloading || sniperAmmo === SNIPER_MAG_SIZE) return;
+        sniperReloading = true;
+        sniperReloadTimer = SNIPER_RELOAD_TIME;
+        updateSniperHud();
+    }
+
+    function updateSniperHud() {
+        if (!sniperHud) return;
+        if (sniperReloading) {
+            sniperHud.innerHTML = 'RELOADING<span class="reload">' + sniperReloadTimer.toFixed(1) + 's</span>';
+        } else {
+            sniperHud.innerHTML = 'AMMO ' + sniperAmmo + '/' + SNIPER_MAG_SIZE
+                + '<span class="reload">R RELOAD &middot; HOLD RMB TO AIM</span>';
+        }
+    }
+
+    let aimHintTimer = 0;
+    function flashAimHint() {
+        if (!sniperHud) return;
+        sniperHud.innerHTML = 'AIM FIRST<span class="reload">HOLD RIGHT-CLICK</span>';
+        sniperHud.style.color = '#ff5566';
+        clearTimeout(aimHintTimer);
+        aimHintTimer = setTimeout(() => {
+            sniperHud.style.color = '';
+            updateSniperHud();
+        }, 700);
     }
 
     // ── Init ─────────────────────────────────────────────────
@@ -1855,13 +3157,42 @@
         hudKillfeed = document.getElementById('killfeed');
         hudDamageFlash = document.getElementById('damage-flash');
         minimapCtx = document.getElementById('minimap-canvas').getContext('2d');
+        respawnBannerEl = document.getElementById('respawn-banner');
+        respawnBannerTextEl = document.getElementById('respawn-banner-text');
+        respawnBannerSubEl = document.getElementById('respawn-banner-sub');
+        playersPanelEl = document.getElementById('players-panel');
+        playersListEl = document.getElementById('players-list');
+
+        // Start-screen sensitivity & name (shared with pause-menu slider)
+        const savedName = localStorage.getItem('playerName') || '';
+        const startSensSlider = document.getElementById('start-sens-slider');
+        const startSensValue = document.getElementById('start-sens-value');
+        const startNameInput = document.getElementById('start-name-input');
+        const connStatus = document.getElementById('connection-status');
+        const startSliderVal = aimSensitivity * 1000;
+        startSensSlider.value = startSliderVal;
+        startSensValue.textContent = startSliderVal.toFixed(2);
+        startSensSlider.addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            aimSensitivity = v / 1000;
+            startSensValue.textContent = v.toFixed(2);
+            localStorage.setItem('aimSensitivity', aimSensitivity);
+            // Keep pause-menu slider in sync
+            const ps = document.getElementById('sens-slider');
+            const pv = document.getElementById('sens-value');
+            if (ps) { ps.value = v; }
+            if (pv) { pv.textContent = v.toFixed(2); }
+        });
+        if (savedName) startNameInput.value = savedName;
 
         // Render one frame so the background shows
         renderer.render(scene, camera);
 
-        // Start button
-        document.getElementById('start-btn').addEventListener('click', () => {
+        function beginCoop() {
+            gameMode = 'coop';
+            isMP = false;
             document.getElementById('start-screen').style.display = 'none';
+            playersPanelEl.style.display = 'none';
             gameStarted = true;
 
             createPlayer();
@@ -1871,7 +3202,73 @@
 
             renderer.domElement.requestPointerLock();
             clock.start();
-        });
+        }
+
+        function beginMultiplayer() {
+            if (ws) return; // already connecting
+            const name = (startNameInput.value || '').trim().slice(0, 16) || ('Tank-' + Math.floor(Math.random() * 900 + 100));
+            localStorage.setItem('playerName', name);
+            myName = name;
+            connStatus.textContent = 'Connecting...';
+            connStatus.style.color = '#ff9966';
+
+            netConnect(name, (welcome) => {
+                connStatus.textContent = '';
+                gameMode = 'multiplayer';
+                isMP = true;
+                document.getElementById('start-screen').style.display = 'none';
+                playersPanelEl.style.display = 'block';
+                gameStarted = true;
+
+                const spawn = welcome.spawn || { x: 0, z: 0 };
+                createPlayer(spawn.x, spawn.z);
+
+                renderer.domElement.requestPointerLock();
+                clock.start();
+                addKillfeedEntry('Connected as ' + myName);
+            }, (err) => {
+                connStatus.textContent = 'FAILED: ' + err + ' (is server running?)';
+                connStatus.style.color = '#ff5555';
+                if (ws) { try { ws.close(); } catch (e) {} }
+                ws = null;
+            });
+        }
+
+        function beginSniper() {
+            gameMode = 'sniper';
+            isMP = false;
+            isSniper = true;
+            document.getElementById('start-screen').style.display = 'none';
+            playersPanelEl.style.display = 'none';
+            // Hide tank charge UI
+            document.getElementById('charge-container').style.display = 'none';
+            document.getElementById('charge-label').style.display = 'none';
+            // Show sniper ammo HUD
+            sniperHud = document.getElementById('sniper-ammo');
+            sniperHud.style.display = 'block';
+            updateSniperHud();
+
+            // Hide boundary walls so sniper has clean sightlines into the map
+            boundaryWalls.forEach(w => { w.visible = false; });
+
+            gameStarted = true;
+
+            createSniperPlatform();
+            createSniperPlayer();
+
+            // Spawn enemy tanks down on the field
+            for (let i = 0; i < enemiesPerWave; i++) {
+                spawnEnemy();
+            }
+
+            renderer.domElement.requestPointerLock();
+            clock.start();
+            addKillfeedEntry('SNIPER MODE — defend the perimeter');
+        }
+
+        document.getElementById('start-coop-btn').addEventListener('click', beginCoop);
+        document.getElementById('start-mp-btn').addEventListener('click', beginMultiplayer);
+        document.getElementById('start-sniper-btn').addEventListener('click', beginSniper);
 
         document.getElementById('restart-btn').addEventListener('click', restartGame);
 
@@ -1880,7 +3277,7 @@
 
     // Expose for HTML onclick fallback
     window.startGame = function () {
-        document.getElementById('start-btn').click();
+        document.getElementById('start-coop-btn').click();
     };
     window.restartGame = restartGame;
 

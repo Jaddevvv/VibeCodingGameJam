@@ -1,4 +1,3 @@
-Create a tank game where we fight against other tanks.
-It should be a 3D realisitc tank game not minecraft like, not boxed gameplay.
-The tanks should be able to move and shoot a laser that can be charged (the more you press on space the more it charges and do more dmg)
-the map should be some realistic terrain in the vibes of CSGO maps with dust
+TODO : 
+- Optimize designs make it more playable and prettier
+- Add multiplier mode for sniper; make the map 50% smaller in the edges and its green vs red team and animations of killing tanks and the one that kills the most wins the wave.

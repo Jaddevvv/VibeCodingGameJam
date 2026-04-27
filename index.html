@@ -106,29 +106,78 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.88); z-index: 100;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
+            overflow-y: auto;
         }
         #start-screen h1 {
-            color: #ff6633; font-size: 56px; letter-spacing: 6px;
+            color: #ff6633; font-size: 52px; letter-spacing: 6px;
             text-shadow: 0 0 30px rgba(255,102,51,0.4);
-            margin-bottom: 10px;
+            margin-bottom: 6px;
         }
         #start-screen .subtitle {
-            color: rgba(255,255,255,0.35); font-size: 14px;
-            letter-spacing: 4px; margin-bottom: 40px;
+            color: rgba(255,255,255,0.35); font-size: 13px;
+            letter-spacing: 4px; margin-bottom: 28px;
         }
         #start-screen .controls {
-            color: rgba(255,255,255,0.55); font-size: 15px;
-            margin-bottom: 6px; letter-spacing: 1px;
+            color: rgba(255,255,255,0.55); font-size: 14px;
+            margin-bottom: 4px; letter-spacing: 1px;
         }
         #start-screen .controls span { color: #ff9966; }
         .play-btn {
-            margin-top: 40px; padding: 16px 50px;
+            padding: 14px 42px;
             background: #ff6633; border: none; color: #fff;
-            font-family: 'Courier New', monospace; font-size: 22px;
+            font-family: 'Courier New', monospace; font-size: 20px;
             letter-spacing: 3px; cursor: pointer; pointer-events: all;
             border-radius: 4px; transition: background 0.2s;
         }
         .play-btn:hover { background: #ff8855; }
+        .play-btn.alt { background: #446688; }
+        .play-btn.alt:hover { background: #5577aa; }
+
+        #start-screen .section-title {
+            color: #ff9966; font-size: 13px; letter-spacing: 4px;
+            margin-top: 22px; margin-bottom: 10px;
+        }
+        #start-screen .mode-row {
+            display: flex; gap: 16px; margin-top: 8px;
+        }
+        #start-screen .setup-row {
+            display: flex; flex-direction: column; align-items: center;
+            margin-top: 14px; min-width: 320px;
+        }
+        #start-screen .setup-row label {
+            color: rgba(255,255,255,0.7); font-size: 12px; letter-spacing: 2px;
+            margin-bottom: 6px;
+        }
+        #start-screen .setup-row label span { color: #ff9966; }
+        #start-screen input[type="range"] {
+            width: 300px; height: 6px; -webkit-appearance: none; appearance: none;
+            background: rgba(255,255,255,0.15); border-radius: 3px; outline: none;
+            cursor: pointer; pointer-events: all;
+        }
+        #start-screen input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 16px; height: 16px; border-radius: 50%;
+            background: #ff6633; border: 2px solid #fff; cursor: pointer;
+        }
+        #start-screen input[type="range"]::-moz-range-thumb {
+            width: 16px; height: 16px; border-radius: 50%;
+            background: #ff6633; border: 2px solid #fff; cursor: pointer;
+        }
+        #start-screen input[type="text"] {
+            width: 240px; padding: 8px 12px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: #fff; font-family: 'Courier New', monospace;
+            font-size: 15px; letter-spacing: 1px; text-align: center;
+            border-radius: 4px; outline: none; pointer-events: all;
+        }
+        #start-screen input[type="text"]:focus {
+            border-color: #ff9966;
+        }
+        #connection-status {
+            color: #ff9966; font-size: 13px; letter-spacing: 2px;
+            margin-top: 16px; min-height: 18px;
+        }
 
         /* Game over */
         #game-over {
@@ -204,6 +253,55 @@
             letter-spacing: 2px; margin-top: 10px;
         }
 
+        /* Player list (multiplayer) */
+        #players-panel {
+            position: absolute; top: 80px; right: 20px;
+            min-width: 200px;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            padding: 10px 12px;
+            color: #fff;
+            font-size: 12px;
+            letter-spacing: 1px;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+            display: none;
+        }
+        #players-panel .players-title {
+            color: #ff9966;
+            letter-spacing: 3px;
+            font-size: 11px;
+            margin-bottom: 6px;
+            border-bottom: 1px solid rgba(255,255,255,0.15);
+            padding-bottom: 4px;
+        }
+        #players-panel .player-row {
+            display: flex; justify-content: space-between;
+            margin: 3px 0; gap: 10px;
+        }
+        #players-panel .player-row.dead { opacity: 0.45; }
+        #players-panel .player-name.me { color: #66ff99; }
+        #players-panel .player-kills { color: #ffcc66; }
+
+        /* Respawn banner */
+        #respawn-banner {
+            position: fixed; top: 45%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff3333; font-size: 34px; letter-spacing: 6px;
+            text-shadow: 0 0 20px rgba(255,60,60,0.5), 2px 2px 6px rgba(0,0,0,0.9);
+            display: none; text-align: center;
+            pointer-events: none; z-index: 40;
+        }
+        #respawn-banner .sub {
+            color: rgba(255,255,255,0.7); font-size: 14px;
+            letter-spacing: 3px; margin-top: 10px;
+        }
+
+        /* MP killfeed highlight */
+        .killfeed-entry.mp-kill { color: #ffcc66; }
+        .killfeed-entry.mp-you-killed { color: #66ff99; }
+        .killfeed-entry.mp-you-died { color: #ff6666; }
+
         /* Loot pickup notification */
         #loot-popup {
             position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
@@ -211,6 +309,45 @@
             text-shadow: 0 0 15px rgba(255,200,50,0.6), 2px 2px 6px rgba(0,0,0,0.8);
             opacity: 0; transition: opacity 0.3s ease;
             pointer-events: none;
+        }
+
+        /* Sniper scope overlay */
+        #scope-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 30;
+            display: none;
+        }
+        #scope-overlay::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle at center, transparent 0, transparent 36vh, #000 38vh);
+        }
+        #scope-overlay .scope-line {
+            position: absolute; background: rgba(0,0,0,0.85);
+        }
+        #scope-overlay .scope-line.h {
+            top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-0.5px);
+        }
+        #scope-overlay .scope-line.v {
+            left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-0.5px);
+        }
+        #scope-overlay .scope-ring {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 72vh; height: 72vh; border-radius: 50%;
+            border: 2px solid rgba(0,0,0,0.7);
+            box-shadow: inset 0 0 80px rgba(0,0,0,0.6);
+        }
+
+        /* Sniper ammo / fire HUD */
+        #sniper-ammo {
+            position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+            color: #ffcc66; font-size: 18px; letter-spacing: 4px;
+            text-shadow: 2px 2px 6px rgba(0,0,0,0.9);
+            display: none;
+        }
+        #sniper-ammo .reload {
+            display: block; font-size: 12px; color: rgba(255,180,90,0.7);
+            letter-spacing: 3px; margin-top: 4px;
         }
     </style>
 </head>
@@ -229,9 +366,25 @@
         <div id="minimap"><canvas id="minimap-canvas" width="160" height="160"></canvas></div>
         <div id="buffs"></div>
         <div id="loot-popup"></div>
+        <div id="sniper-ammo">AMMO 5/5<span class="reload">R TO RELOAD</span></div>
+        <div id="players-panel">
+            <div class="players-title">PLAYERS</div>
+            <div id="players-list"></div>
+        </div>
+    </div>
+
+    <div id="respawn-banner">
+        <div id="respawn-banner-text">DESTROYED</div>
+        <div class="sub" id="respawn-banner-sub">respawning...</div>
     </div>
 
     <div id="damage-flash"></div>
+
+    <div id="scope-overlay">
+        <div class="scope-ring"></div>
+        <div class="scope-line h"></div>
+        <div class="scope-line v"></div>
+    </div>
 
     <div id="start-screen">
         <h1>TANK ASSAULT</h1>
@@ -240,7 +393,23 @@
         <div class="controls"><span>MOUSE</span> &mdash; Aim Turret</div>
         <div class="controls"><span>HOLD SPACE</span> &mdash; Charge Laser</div>
         <div class="controls"><span>RELEASE SPACE</span> &mdash; Fire!</div>
-        <button class="play-btn" id="start-btn">DEPLOY</button>
+
+        <div class="setup-row">
+            <label>AIM SENSITIVITY: <span id="start-sens-value">3.00</span></label>
+            <input type="range" id="start-sens-slider" min="0.5" max="10" step="0.1" value="3">
+        </div>
+        <div class="setup-row">
+            <label>CALLSIGN <span>(multiplayer)</span></label>
+            <input type="text" id="start-name-input" maxlength="16" placeholder="Tank-1">
+        </div>
+
+        <div class="section-title">CHOOSE MODE</div>
+        <div class="mode-row">
+            <button class="play-btn alt" id="start-coop-btn">CO-OP</button>
+            <button class="play-btn" id="start-mp-btn">MULTIPLAYER</button>
+            <button class="play-btn alt" id="start-sniper-btn" style="background:#6b4422;">SNIPER</button>
+        </div>
+        <div id="connection-status"></div>
     </div>
 
     <div id="settings-menu">
@@ -249,7 +418,10 @@
             <label>AIM SENSITIVITY: <span id="sens-value">3.00</span></label>
             <input type="range" id="sens-slider" min="0.5" max="10" step="0.1" value="3">
         </div>
-        <button class="play-btn" id="resume-btn">RESUME</button>
+        <div style="display:flex; gap:14px;">
+            <button class="play-btn" id="resume-btn">RESUME</button>
+            <button class="play-btn alt" id="quit-menu-btn">MAIN MENU</button>
+        </div>
         <div class="hint">PRESS ESC TO TOGGLE</div>
     </div>
 
